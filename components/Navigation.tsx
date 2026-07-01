@@ -6,6 +6,7 @@ import { useState } from 'react'
 
 const navLinks = [
   { href: '/', label: '홈' },
+  { href: '/lessons', label: '🌱 강의' },
   { href: '/curriculum', label: '커리큘럼' },
   { href: '/chat', label: 'AI 채팅 강사' },
   { href: '/posts', label: '포스팅' },

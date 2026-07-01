@@ -1,4 +1,5 @@
 import Link from 'next/link'
+import { getAllLessons } from '@/lib/lessons'
 
 const levels = [
   {
@@ -57,6 +58,8 @@ const features = [
 ]
 
 export default function HomePage() {
+  const recentLessons = getAllLessons().slice(-3).reverse()
+
   return (
     <div>
       {/* Hero */}
@@ -145,6 +148,62 @@ export default function HomePage() {
                 </Link>
               </div>
             ))}
+          </div>
+        </div>
+      </section>
+
+      {/* Latest Lessons */}
+      <section className="py-20 px-4 bg-white">
+        <div className="max-w-6xl mx-auto">
+          <div className="flex items-end justify-between mb-10">
+            <div>
+              <div className="inline-block bg-secondary-100 text-secondary-700 text-xs font-bold px-3 py-1 rounded-full mb-3">
+                🌱 매주 업데이트
+              </div>
+              <h2 className="text-3xl font-bold text-slate-800">최신 초급 강의</h2>
+              <p className="text-slate-500 mt-1">5분 안에 읽는 AI 개념 + 핵심 카드 + 퀴즈</p>
+            </div>
+            <Link
+              href="/lessons"
+              className="hidden sm:inline-flex text-sm font-medium text-primary-600 hover:text-primary-700 transition-colors"
+            >
+              전체 강의 보기 →
+            </Link>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+            {recentLessons.map((lesson) => (
+              <Link
+                key={lesson.id}
+                href={`/lessons/${lesson.slug}`}
+                className="group bg-white rounded-2xl border border-slate-100 p-6 hover:shadow-md hover:border-secondary-200 transition-all"
+              >
+                <div className="flex items-center justify-between mb-4">
+                  <span className="text-2xl">{lesson.emoji}</span>
+                  <span className="text-xs font-bold bg-secondary-100 text-secondary-700 px-2 py-0.5 rounded-full">
+                    Week {lesson.weekNumber}
+                  </span>
+                </div>
+                <h3 className="font-bold text-slate-800 mb-2 group-hover:text-secondary-700 transition-colors leading-snug">
+                  {lesson.title}
+                </h3>
+                <p className="text-slate-500 text-sm line-clamp-2 leading-relaxed mb-4">
+                  {lesson.description}
+                </p>
+                <div className="flex items-center gap-3 text-xs text-slate-400">
+                  <span>⏱ {lesson.readTime}</span>
+                  <span>📋 카드 3장</span>
+                  <span>✏️ 퀴즈</span>
+                </div>
+              </Link>
+            ))}
+          </div>
+          <div className="mt-6 text-center sm:hidden">
+            <Link
+              href="/lessons"
+              className="text-sm font-medium text-primary-600 hover:text-primary-700 transition-colors"
+            >
+              전체 강의 보기 →
+            </Link>
           </div>
         </div>
       </section>
