@@ -26,7 +26,7 @@ export async function POST(req: NextRequest) {
   const { messages } = await req.json()
 
   const stream = await client.messages.stream({
-    model: 'claude-opus-4-7',
+    model: 'claude-opus-4-8',
     max_tokens: 1024,
     system: systemPrompt,
     messages,

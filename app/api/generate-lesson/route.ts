@@ -70,7 +70,7 @@ export async function POST(req: NextRequest) {
     const weekNumber = body.weekNumber ?? getNextWeekNumber()
 
     const message = await client.messages.create({
-      model: 'claude-opus-4-7',
+      model: 'claude-opus-4-8',
       max_tokens: 2000,
       messages: [
         {
