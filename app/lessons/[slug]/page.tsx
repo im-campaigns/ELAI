@@ -33,7 +33,7 @@ export default function LessonPage({ params }: Props) {
             강의 목록
           </Link>
           <span>/</span>
-          <span className="text-slate-600">Week {lesson.weekNumber}</span>
+          <span className="text-slate-600">Week {lesson.weekNumber} · {lesson.weekTitle}</span>
         </div>
 
         {/* Header */}
@@ -42,7 +42,7 @@ export default function LessonPage({ params }: Props) {
             <span className="text-4xl">{lesson.emoji}</span>
             <div>
               <span className="inline-block bg-secondary-100 text-secondary-700 text-xs font-bold px-2.5 py-1 rounded-full mb-1">
-                Week {lesson.weekNumber} · 초급
+                {lesson.lessonNumber} · {lesson.dayLabel}요일 · 초급
               </span>
               <div className="flex items-center gap-3 text-xs text-slate-400">
                 <span>⏱ {lesson.readTime} 읽기</span>

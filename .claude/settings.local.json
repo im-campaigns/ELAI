@@ -1,7 +1,22 @@
 {
   "permissions": {
     "allow": [
-      "PowerShell(New-Item *)"
+      "PowerShell(New-Item *)",
+      "Bash(node -e \"require\\('./data/lessons.json'\\)\")",
+      "Bash(npm ls *)",
+      "Bash(node -e \"let s='';process.stdin.on\\('data',d=>s+=d\\);process.stdin.on\\('end',\\(\\)=>{try{const j=JSON.parse\\(s\\);console.log\\('OK, lessons:', j.lessons.length, 'last week:', Math.max\\(...j.lessons.map\\(l=>l.weekNumber\\)\\)\\)}catch\\(e\\){console.log\\('PARSE ERROR', e.message\\)}}\\)\")",
+      "Bash(gh run *)",
+      "PowerShell(gh run *)",
+      "Bash(node --check scripts/generate-weekly-lesson.mjs)",
+      "Bash(git add *)",
+      "Bash(git push *)",
+      "Bash(git commit *)",
+      "Bash(git fetch *)",
+      "Bash(git pull *)",
+      "Bash(git stash *)",
+      "Bash(node -e ' *)",
+      "Read(//tmp/**)",
+      "Bash(npm run *)"
     ]
   }
 }

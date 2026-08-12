@@ -158,7 +158,7 @@ export default function HomePage() {
           <div className="flex items-end justify-between mb-10">
             <div>
               <div className="inline-block bg-secondary-100 text-secondary-700 text-xs font-bold px-3 py-1 rounded-full mb-3">
-                🌱 매주 업데이트
+                🌱 평일 매일 업데이트
               </div>
               <h2 className="text-3xl font-bold text-slate-800">최신 초급 강의</h2>
               <p className="text-slate-500 mt-1">5분 안에 읽는 AI 개념 + 핵심 카드 + 퀴즈</p>
@@ -180,7 +180,7 @@ export default function HomePage() {
                 <div className="flex items-center justify-between mb-4">
                   <span className="text-2xl">{lesson.emoji}</span>
                   <span className="text-xs font-bold bg-secondary-100 text-secondary-700 px-2 py-0.5 rounded-full">
-                    Week {lesson.weekNumber}
+                    {lesson.lessonNumber}
                   </span>
                 </div>
                 <h3 className="font-bold text-slate-800 mb-2 group-hover:text-secondary-700 transition-colors leading-snug">
