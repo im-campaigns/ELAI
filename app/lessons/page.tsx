@@ -1,13 +1,14 @@
 import Link from 'next/link'
-import { getLessonsByWeek, DAY_LABELS } from '@/lib/lessons'
+import { getAllLessons, getLessonsByWeek, DAY_LABELS } from '@/lib/lessons'
 
 export const metadata = {
-  title: '초급 AI 강의 | ELAI',
-  description: '평일 매일 업데이트되는 초급 AI 강의. 5분 안에 읽는 핵심 개념, 카드, 퀴즈.',
+  title: 'AI 상식 | ELAI',
+  description: '평일 매일 업데이트되는 초급 AI 상식. 5분 안에 읽는 핵심 개념, 카드, 퀴즈.',
 }
 
 export default function LessonsPage() {
   const weeks = getLessonsByWeek()
+  const firstLesson = getAllLessons()[0]
 
   return (
     <div className="min-h-screen bg-slate-50 py-16 px-4">
@@ -15,13 +16,22 @@ export default function LessonsPage() {
         {/* Header */}
         <div className="text-center mb-14">
           <div className="inline-block bg-secondary-100 text-secondary-700 text-sm font-semibold px-4 py-1.5 rounded-full mb-4">
-            🌱 초급 커리큘럼
+            🌱 AI 상식 · 초급 커리큘럼
           </div>
-          <h1 className="text-4xl font-bold text-slate-800 mb-4">AI 기초 강의</h1>
+          <h1 className="text-4xl font-bold text-slate-800 mb-4">AI 상식</h1>
           <p className="text-slate-500 text-lg max-w-2xl mx-auto leading-relaxed">
             월~금 매일 새 강의가 업데이트됩니다. Week 단위로 주제를 모아 5일간 배워요.<br />
             5분 안에 읽는 핵심 개념 + 카드 3장 + 퀴즈 1문제.
           </p>
+          {firstLesson && (
+            <Link
+              href={`/lessons/${firstLesson.slug}`}
+              className="inline-flex items-center gap-2 mt-6 bg-secondary-600 hover:bg-secondary-700 text-white text-sm font-bold px-6 py-3 rounded-xl transition-colors"
+            >
+              <span>🚀</span>
+              <span>처음이라면 여기서 시작하세요 — Week 1-1</span>
+            </Link>
+          )}
         </div>
 
         {/* Weeks */}
@@ -53,12 +63,21 @@ export default function LessonsPage() {
                     )
                   }
 
+                  const isFirst = firstLesson && lesson.id === firstLesson.id
+
                   return (
                     <Link
                       key={lesson.id}
                       href={`/lessons/${lesson.slug}`}
-                      className="group bg-white rounded-2xl border border-slate-100 p-5 hover:shadow-md hover:border-secondary-200 transition-all flex flex-col"
+                      className={`group bg-white rounded-2xl border p-5 hover:shadow-md hover:border-secondary-200 transition-all flex flex-col relative ${
+                        isFirst ? 'border-secondary-300 ring-2 ring-secondary-100' : 'border-slate-100'
+                      }`}
                     >
+                      {isFirst && (
+                        <span className="absolute -top-2.5 left-3 text-[10px] font-bold bg-secondary-600 text-white px-2 py-0.5 rounded-full">
+                          🚀 시작
+                        </span>
+                      )}
                       <div className="flex items-center justify-between mb-3">
                         <span className="text-xs font-bold text-slate-400">{lesson.dayLabel}</span>
                         <span className="text-2xl">{lesson.emoji}</span>

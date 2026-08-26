@@ -40,9 +40,20 @@ export default function ChatPage() {
         body: JSON.stringify({ messages: newMessages }),
       })
 
-      if (!res.ok) throw new Error('API 오류가 발생했습니다.')
+      if (!res.ok) {
+        let serverMessage = ''
+        try {
+          const errBody = await res.json()
+          serverMessage = errBody?.error ?? ''
+        } catch {
+          // 서버가 JSON이 아닌 응답을 준 경우 무시하고 기본 메시지 사용
+        }
+        throw new Error(serverMessage || 'API 오류가 발생했습니다.')
+      }
 
-      const reader = res.body!.getReader()
+      if (!res.body) throw new Error('서버 응답을 받지 못했어요.')
+
+      const reader = res.body.getReader()
       const decoder = new TextDecoder()
       let assistantText = ''
 
@@ -59,10 +70,15 @@ export default function ChatPage() {
         })
       }
     } catch (err) {
-      setMessages((prev) => [
-        ...prev,
-        { role: 'assistant', content: '죄송합니다. 오류가 발생했습니다. 잠시 후 다시 시도해주세요.' },
-      ])
+      const message = err instanceof Error && err.message ? err.message : '죄송해요, 오류가 발생했어요. 잠시 후 다시 시도해주세요.'
+      setMessages((prev) => {
+        const updated = [...prev]
+        if (updated[updated.length - 1]?.role === 'assistant' && updated[updated.length - 1].content === '') {
+          updated[updated.length - 1] = { role: 'assistant', content: message }
+          return updated
+        }
+        return [...updated, { role: 'assistant', content: message }]
+      })
     } finally {
       setIsLoading(false)
       inputRef.current?.focus()
@@ -83,8 +99,8 @@ export default function ChatPage() {
         <div className="max-w-3xl mx-auto flex items-center gap-3">
           <div className="w-10 h-10 rounded-full bg-primary-100 flex items-center justify-center text-xl">🤖</div>
           <div>
-            <h1 className="font-bold text-slate-800">AI 채팅 강사</h1>
-            <p className="text-xs text-slate-500">AI · ML · DL 무엇이든 질문하세요 · Powered by Claude</p>
+            <h1 className="font-bold text-slate-800">엘라이 쌤</h1>
+            <p className="text-xs text-slate-500">AI · ML · DL 무엇이든 물어보세요 · Powered by Claude</p>
           </div>
           <span className="ml-auto flex items-center gap-1.5 text-xs text-secondary-600 bg-secondary-50 px-3 py-1.5 rounded-full">
             <span className="w-1.5 h-1.5 rounded-full bg-secondary-500 inline-block animate-pulse" />
@@ -99,7 +115,7 @@ export default function ChatPage() {
           {messages.length === 0 && (
             <div className="text-center py-10">
               <div className="text-5xl mb-4">🤖</div>
-              <h2 className="text-xl font-bold text-slate-700 mb-2">안녕하세요! ELAI AI 강사입니다</h2>
+              <h2 className="text-xl font-bold text-slate-700 mb-2">안녕하세요! 엘라이 쌤이에요 👋</h2>
               <p className="text-slate-500 mb-8">AI에 관한 어떤 질문도 환영해요. 아래에서 시작해보세요!</p>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 {suggestions.map((s) => (
@@ -189,7 +205,7 @@ export default function ChatPage() {
           </button>
         </div>
         <p className="max-w-3xl mx-auto mt-2 text-xs text-slate-400 text-center">
-          AI 강사는 Claude AI를 기반으로 합니다. 답변이 항상 완벽하지 않을 수 있으니 참고용으로 활용하세요.
+          엘라이 쌤은 Claude AI를 기반으로 합니다. 답변이 항상 완벽하지 않을 수 있으니 참고용으로 활용하세요.
         </p>
       </div>
     </div>

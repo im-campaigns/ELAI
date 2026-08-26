@@ -6,9 +6,9 @@ import { useState } from 'react'
 
 const navLinks = [
   { href: '/', label: '홈' },
-  { href: '/lessons', label: '🌱 강의' },
+  { href: '/lessons', label: '🌱 AI 상식' },
   { href: '/curriculum', label: '커리큘럼' },
-  { href: '/chat', label: 'AI 채팅 강사' },
+  { href: '/chat', label: '엘라이 쌤' },
   { href: '/posts', label: '포스팅' },
 ]
 
@@ -48,7 +48,7 @@ export default function Navigation() {
             className="hidden md:inline-flex items-center gap-2 bg-primary-600 hover:bg-primary-700 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors"
           >
             <span>🤖</span>
-            <span>AI 강사와 대화하기</span>
+            <span>엘라이 쌤과 대화하기</span>
           </Link>
 
           {/* Mobile hamburger */}
@@ -88,7 +88,7 @@ export default function Navigation() {
                   onClick={() => setMenuOpen(false)}
                   className="block mt-2 text-center bg-primary-600 hover:bg-primary-700 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors"
                 >
-                  🤖 AI 강사와 대화하기
+                  🤖 엘라이 쌤과 대화하기
                 </Link>
               </li>
             </ul>

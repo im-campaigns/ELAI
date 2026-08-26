@@ -16,7 +16,22 @@
       "Bash(git stash *)",
       "Bash(node -e ' *)",
       "Read(//tmp/**)",
-      "Bash(npm run *)"
+      "Bash(npm run *)",
+      "Bash(git rebase *)",
+      "Bash(mkdir -p \"C:\\\\Users\\\\User\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\C--Users-User-elai\\\\0fdcb2ad-53f2-40cc-85d6-99ed4c185521\\\\scratchpad\")",
+      "Bash(git show *)",
+      "Bash(node *)",
+      "Skill(claude-api)",
+      "Bash(xargs -I{} sh -c 'echo ---{}---; cat {}')",
+      "Bash(npm -v)",
+      "Bash(npx tsc *)",
+      "Bash(grep -o \"ANTHROPIC_API_KEY=.\\\\{0,8\\\\}\" .env.local)",
+      "Bash(curl -s http://localhost:3000/lessons/what-is-a-prompt)",
+      "Bash(curl -s http://localhost:3000/lessons)",
+      "Bash(curl -s http://localhost:3000/curriculum)",
+      "Bash(curl -s http://localhost:3000/lessons -o /tmp/lessons.html)",
+      "Bash(grep -o \"Week[^<]\\\\{0,5\\\\}\" /tmp/lessons.html)",
+      "Bash(cd C:\\\\Users\\\\User\\\\elai *)"
     ]
   }
 }

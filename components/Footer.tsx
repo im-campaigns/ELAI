@@ -17,8 +17,9 @@ export default function Footer() {
             <h4 className="text-white font-semibold mb-3">메뉴</h4>
             <ul className="space-y-2 text-sm">
               <li><Link href="/" className="hover:text-white transition-colors">홈</Link></li>
+              <li><Link href="/lessons" className="hover:text-white transition-colors">🌱 AI 상식</Link></li>
               <li><Link href="/curriculum" className="hover:text-white transition-colors">커리큘럼</Link></li>
-              <li><Link href="/chat" className="hover:text-white transition-colors">AI 채팅 강사</Link></li>
+              <li><Link href="/chat" className="hover:text-white transition-colors">엘라이 쌤</Link></li>
               <li><Link href="/posts" className="hover:text-white transition-colors">포스팅</Link></li>
             </ul>
           </div>
@@ -26,9 +27,9 @@ export default function Footer() {
           <div>
             <h4 className="text-white font-semibold mb-3">레벨별 학습</h4>
             <ul className="space-y-2 text-sm">
-              <li><Link href="/curriculum#beginner" className="hover:text-white transition-colors">🌱 초급 — AI 기초</Link></li>
-              <li><Link href="/curriculum#intermediate" className="hover:text-white transition-colors">🚀 중급 — 머신러닝</Link></li>
-              <li><Link href="/curriculum#advanced" className="hover:text-white transition-colors">⚡ 고급 — 딥러닝 & 실전</Link></li>
+              <li><Link href="/curriculum?level=beginner" className="hover:text-white transition-colors">🌱 초급 — AI 기초</Link></li>
+              <li><Link href="/curriculum?level=intermediate" className="hover:text-white transition-colors">🚀 중급 — 머신러닝</Link></li>
+              <li><Link href="/curriculum?level=advanced" className="hover:text-white transition-colors">⚡ 고급 — 딥러닝 & 실전</Link></li>
             </ul>
           </div>
         </div>
