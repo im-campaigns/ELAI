@@ -13,12 +13,12 @@ export async function generateMetadata({ params }: Props) {
   const post = getPostBySlug(params.slug)
   if (!post) return {}
   return {
-    title: `${post.title} | ELAI 포스팅`,
+    title: `${post.title} | ELAI 트렌드`,
     description: post.excerpt,
   }
 }
 
-export default function PostPage({ params }: Props) {
+export default function TrendPostPage({ params }: Props) {
   const post = getPostBySlug(params.slug)
   if (!post) notFound()
 
@@ -30,8 +30,8 @@ export default function PostPage({ params }: Props) {
       <div className="max-w-2xl mx-auto">
         {/* Breadcrumb */}
         <div className="flex items-center gap-2 text-sm text-slate-400 mb-8">
-          <Link href="/posts" className="hover:text-slate-600 transition-colors">
-            포스팅
+          <Link href="/trend" className="hover:text-slate-600 transition-colors">
+            트렌드
           </Link>
           <span>/</span>
           <span className="text-slate-600">{CATEGORY_LABELS[post.category]}</span>
@@ -74,7 +74,7 @@ export default function PostPage({ params }: Props) {
         </div>
 
         {/* Content */}
-        <div className="bg-white rounded-2xl border border-slate-100 p-8 mb-8">
+        <div className="bg-white rounded-2xl border border-slate-100 p-8 mb-6">
           <div className="prose prose-slate max-w-none space-y-4">
             {post.content.map((paragraph, i) =>
               isQA && paragraph.startsWith('Q.') ? (
@@ -90,12 +90,29 @@ export default function PostPage({ params }: Props) {
           </div>
         </div>
 
+        {/* Chart (도표) */}
+        {post.chart && (
+          <div className="bg-white rounded-2xl border border-slate-100 p-8 mb-8">
+            <span className="text-xs font-bold uppercase tracking-wider text-slate-400 mb-4 block">
+              📊 {post.chart.title}
+            </span>
+            <div className="space-y-3">
+              {post.chart.rows.map((row, i) => (
+                <div key={i} className="text-sm border-b border-slate-50 last:border-0 pb-3 last:pb-0">
+                  <p className="font-semibold text-slate-700 mb-0.5">{row.label}</p>
+                  <p className="text-slate-500 text-xs leading-relaxed">{row.value}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* Ask AI */}
         <div className="bg-gradient-to-r from-primary-50 to-secondary-50 border border-primary-100 rounded-2xl p-6 mb-8 flex items-center gap-4">
           <span className="text-3xl">🤖</span>
           <div className="flex-1">
             <p className="font-semibold text-slate-700 mb-0.5">더 궁금한 점이 있나요?</p>
-            <p className="text-slate-500 text-sm">엘라이 쌤에게 바로 질문해보세요.</p>
+            <p className="text-slate-500 text-sm">AI쌤에게 바로 질문해보세요.</p>
           </div>
           <Link
             href="/chat"
@@ -109,7 +126,7 @@ export default function PostPage({ params }: Props) {
         <div className="grid grid-cols-2 gap-4">
           {prev ? (
             <Link
-              href={`/posts/${prev.slug}`}
+              href={`/trend/${prev.slug}`}
               className="bg-white border border-slate-100 rounded-2xl p-5 hover:border-slate-200 hover:shadow-sm transition-all group"
             >
               <p className="text-xs text-slate-400 mb-1">← 이전 글</p>
@@ -122,7 +139,7 @@ export default function PostPage({ params }: Props) {
           )}
           {next ? (
             <Link
-              href={`/posts/${next.slug}`}
+              href={`/trend/${next.slug}`}
               className="bg-white border border-slate-100 rounded-2xl p-5 hover:border-slate-200 hover:shadow-sm transition-all group text-right"
             >
               <p className="text-xs text-slate-400 mb-1">다음 글 →</p>
@@ -136,8 +153,8 @@ export default function PostPage({ params }: Props) {
         </div>
 
         <div className="mt-8 text-center">
-          <Link href="/posts" className="text-sm text-slate-400 hover:text-slate-600 transition-colors underline">
-            전체 포스팅으로 돌아가기
+          <Link href="/trend" className="text-sm text-slate-400 hover:text-slate-600 transition-colors underline">
+            전체 트렌드로 돌아가기
           </Link>
         </div>
       </div>

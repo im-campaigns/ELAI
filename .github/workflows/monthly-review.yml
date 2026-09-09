@@ -1,0 +1,52 @@
+name: 매달 AI 상식 · 커리큘럼 자동 점검
+
+on:
+  schedule:
+    # 매달 1일 오전 9시 (KST = UTC+9, 즉 전월 마지막날 UTC 00:00)
+    - cron: '0 0 1 * *'
+  workflow_dispatch: # 수동 실행도 가능
+
+concurrency:
+  group: monthly-review
+  cancel-in-progress: false
+
+jobs:
+  monthly-review:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: 저장소 체크아웃
+        uses: actions/checkout@v5
+
+      - name: Node.js 설정
+        uses: actions/setup-node@v5
+        with:
+          node-version: '24'
+          cache: 'npm'
+
+      - name: 패키지 설치
+        run: npm ci
+
+      - name: AI 상식 20강 점검 & 업데이트
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: node scripts/monthly-review-lessons.mjs
+
+      - name: 커리큘럼(초급/중급/고급) 점검 & 업데이트
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: node scripts/monthly-review-curriculum.mjs
+
+      - name: 변경 사항 커밋 & 푸시
+        run: |
+          git config user.name "ELAI Bot"
+          git config user.email "bot@elai.ai"
+          git add data/lessons.json data/curriculum.ts
+          if git diff --staged --quiet; then
+            echo "변경 사항 없음 — 최신 상태입니다"
+          else
+            git commit -m "chore: AI 상식 · 커리큘럼 월간 자동 점검 [skip ci]"
+            git push
+          fi

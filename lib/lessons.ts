@@ -13,7 +13,12 @@ export type Quiz = {
   explanation: string
 }
 
+export type ChartRow = { label: string; value: string }
+export type LessonChart = { title: string; rows: ChartRow[] }
+export type LessonVisual = { caption: string; points: string[] }
+
 export const DAY_LABELS = ['월', '화', '수', '목', '금'] as const
+export const TOTAL_WEEKS = 4
 
 export type Lesson = {
   id: string
@@ -28,9 +33,10 @@ export type Lesson = {
   emoji: string
   content: string[]
   keyCards: KeyCard[]
+  chart: LessonChart
+  visual: LessonVisual
   quiz: Quiz
   readTime: string
-  publishedAt: string
   isPublished: boolean
 }
 
@@ -93,47 +99,5 @@ export function getAdjacentLessons(slug: string): {
   return {
     prev: idx > 0 ? lessons[idx - 1] : null,
     next: idx >= 0 && idx < lessons.length - 1 ? lessons[idx + 1] : null,
-  }
-}
-
-export function formatPublishedDate(iso: string): string {
-  return new Date(iso).toLocaleDateString('ko-KR', {
-    year: 'numeric',
-    month: 'long',
-    day: 'numeric',
-  })
-}
-
-/**
- * Determines the next lesson slot to generate. If the current week's 5 days
- * (월~금) are complete, moves to a new week (weekTitle left null so the
- * caller/AI must pick a new topic). Otherwise continues the current week.
- */
-export function getNextSlot(): {
-  weekNumber: number
-  dayIndex: number
-  dayLabel: string
-  weekTitle: string | null
-} {
-  const lessons = sortLessons(lessonsData.lessons as Lesson[])
-  if (lessons.length === 0) {
-    return { weekNumber: 1, dayIndex: 1, dayLabel: DAY_LABELS[0], weekTitle: null }
-  }
-
-  const last = lessons[lessons.length - 1]
-  if (last.dayIndex < 5) {
-    return {
-      weekNumber: last.weekNumber,
-      dayIndex: last.dayIndex + 1,
-      dayLabel: DAY_LABELS[last.dayIndex],
-      weekTitle: last.weekTitle,
-    }
-  }
-
-  return {
-    weekNumber: last.weekNumber + 1,
-    dayIndex: 1,
-    dayLabel: DAY_LABELS[0],
-    weekTitle: null,
   }
 }

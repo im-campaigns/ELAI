@@ -19,8 +19,8 @@ export default function Footer() {
               <li><Link href="/" className="hover:text-white transition-colors">홈</Link></li>
               <li><Link href="/lessons" className="hover:text-white transition-colors">🌱 AI 상식</Link></li>
               <li><Link href="/curriculum" className="hover:text-white transition-colors">커리큘럼</Link></li>
-              <li><Link href="/chat" className="hover:text-white transition-colors">엘라이 쌤</Link></li>
-              <li><Link href="/posts" className="hover:text-white transition-colors">포스팅</Link></li>
+              <li><Link href="/chat" className="hover:text-white transition-colors">1:1교육 (AI쌤)</Link></li>
+              <li><Link href="/trend" className="hover:text-white transition-colors">트렌드</Link></li>
             </ul>
           </div>
 

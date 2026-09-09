@@ -18,12 +18,25 @@ export default function ChatPage() {
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
   const [isLoading, setIsLoading] = useState(false)
+  const [historyLoaded, setHistoryLoaded] = useState(false)
   const bottomRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages, isLoading])
+
+  useEffect(() => {
+    fetch('/api/chat/history')
+      .then((res) => res.json())
+      .then((data) => {
+        if (Array.isArray(data?.messages) && data.messages.length > 0) {
+          setMessages(data.messages)
+        }
+      })
+      .catch(() => {})
+      .finally(() => setHistoryLoaded(true))
+  }, [])
 
   const sendMessage = async (text: string) => {
     if (!text.trim() || isLoading) return
@@ -99,7 +112,7 @@ export default function ChatPage() {
         <div className="max-w-3xl mx-auto flex items-center gap-3">
           <div className="w-10 h-10 rounded-full bg-primary-100 flex items-center justify-center text-xl">🤖</div>
           <div>
-            <h1 className="font-bold text-slate-800">엘라이 쌤</h1>
+            <h1 className="font-bold text-slate-800">AI쌤</h1>
             <p className="text-xs text-slate-500">AI · ML · DL 무엇이든 물어보세요 · Powered by Claude</p>
           </div>
           <span className="ml-auto flex items-center gap-1.5 text-xs text-secondary-600 bg-secondary-50 px-3 py-1.5 rounded-full">
@@ -112,10 +125,10 @@ export default function ChatPage() {
       {/* Messages */}
       <div className="flex-1 overflow-y-auto chat-scroll bg-slate-50">
         <div className="max-w-3xl mx-auto px-4 py-6 space-y-6">
-          {messages.length === 0 && (
+          {messages.length === 0 && historyLoaded && (
             <div className="text-center py-10">
               <div className="text-5xl mb-4">🤖</div>
-              <h2 className="text-xl font-bold text-slate-700 mb-2">안녕하세요! 엘라이 쌤이에요 👋</h2>
+              <h2 className="text-xl font-bold text-slate-700 mb-2">안녕하세요! AI쌤이에요 👋</h2>
               <p className="text-slate-500 mb-8">AI에 관한 어떤 질문도 환영해요. 아래에서 시작해보세요!</p>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 {suggestions.map((s) => (
@@ -205,7 +218,7 @@ export default function ChatPage() {
           </button>
         </div>
         <p className="max-w-3xl mx-auto mt-2 text-xs text-slate-400 text-center">
-          엘라이 쌤은 Claude AI를 기반으로 합니다. 답변이 항상 완벽하지 않을 수 있으니 참고용으로 활용하세요.
+          AI쌤은 Claude AI를 기반으로 합니다. 답변이 항상 완벽하지 않을 수 있으니 참고용으로 활용하세요.
         </p>
       </div>
     </div>

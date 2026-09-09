@@ -1,10 +1,9 @@
 'use client'
 
-import { Suspense, useMemo, useState } from 'react'
+import { Suspense, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
-import { getLessonsByWeek } from '@/lib/lessons'
-import { curriculumLevels, type CurriculumLevel } from '@/data/curriculum'
+import { curriculumLevels, type CurriculumLevel, type CurriculumSubtopic } from '@/data/curriculum'
 
 const levelStyles: Record<
   CurriculumLevel['id'],
@@ -30,69 +29,118 @@ const levelStyles: Record<
   },
 }
 
-function BeginnerModules() {
-  const weeks = getLessonsByWeek()
+type Progress = Record<string, string[]>
 
-  if (weeks.length === 0) {
-    return (
-      <p className="text-slate-400 text-sm px-1">아직 등록된 강의가 없어요. 곧 업데이트됩니다!</p>
-    )
+function useAuthAndProgress() {
+  const [nickname, setNickname] = useState<string | null | undefined>(undefined) // undefined = loading
+  const [progress, setProgress] = useState<Progress>({ beginner: [], intermediate: [], advanced: [] })
+
+  useEffect(() => {
+    fetch('/api/auth/me')
+      .then((res) => res.json())
+      .then((data) => setNickname(data?.user?.nickname ?? null))
+      .catch(() => setNickname(null))
+  }, [])
+
+  useEffect(() => {
+    if (!nickname) return
+    fetch('/api/curriculum/progress')
+      .then((res) => (res.ok ? res.json() : { progress: {} }))
+      .then((data) => setProgress({ beginner: [], intermediate: [], advanced: [], ...data.progress }))
+      .catch(() => {})
+  }, [nickname])
+
+  const markComplete = async (level: string, subtopicId: string) => {
+    setProgress((prev) => ({
+      ...prev,
+      [level]: prev[level]?.includes(subtopicId) ? prev[level] : [...(prev[level] ?? []), subtopicId],
+    }))
+    try {
+      await fetch('/api/curriculum/progress', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ level, subtopicId }),
+      })
+    } catch {
+      // best-effort; UI already optimistically unlocked
+    }
   }
 
+  return { nickname, progress, markComplete }
+}
+
+function CaseExampleCorner({ subtopic }: { subtopic: CurriculumSubtopic }) {
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
-      {weeks.map((week) => (
-        <div key={week.weekNumber} className="bg-white rounded-2xl border border-slate-100 p-6 hover:shadow-sm transition-shadow">
-          <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Week {week.weekNumber}</span>
-          <h3 className="font-bold text-slate-800 text-lg mb-3">{week.weekTitle}</h3>
-          <ul className="space-y-1.5">
-            {week.lessons.map((lesson) => (
-              <li key={lesson.id}>
-                <Link
-                  href={`/lessons/${lesson.slug}`}
-                  className="flex items-start gap-2 text-sm text-slate-600 hover:text-secondary-700 transition-colors group"
-                >
-                  <span className="mt-0.5 text-slate-300 group-hover:text-secondary-400 flex-shrink-0">▸</span>
-                  <span>
-                    <span className="font-semibold text-slate-400 mr-1.5">{lesson.lessonNumber}</span>
-                    {lesson.title}
-                  </span>
-                </Link>
-              </li>
-            ))}
-          </ul>
-        </div>
-      ))}
+    <div className="mt-3 bg-amber-50 border border-amber-100 rounded-xl p-4">
+      <p className="text-xs font-bold text-amber-700 mb-2">💡 사례 코너 — {subtopic.caseExample.title}</p>
+      <p className="text-sm text-amber-900 leading-relaxed mb-2">{subtopic.caseExample.scenario}</p>
+      <p className="text-xs text-amber-700 font-medium">👉 {subtopic.caseExample.takeaway}</p>
     </div>
   )
 }
 
-function AccordionModules({ level }: { level: CurriculumLevel }) {
+function ModuleAccordion({
+  level,
+  isLoggedIn,
+  progress,
+  markComplete,
+}: {
+  level: CurriculumLevel
+  isLoggedIn: boolean
+  progress: string[]
+  markComplete: (level: string, subtopicId: string) => void
+}) {
   const [openId, setOpenId] = useState<string | null>(null)
+
+  const orderedIds = useMemo(
+    () => level.modules.flatMap((m) => m.subtopics.map((s) => s.id)),
+    [level],
+  )
+
+  const isUnlocked = (subtopicId: string) => {
+    if (!isLoggedIn) return false
+    const idx = orderedIds.indexOf(subtopicId)
+    if (idx === 0) return true
+    return progress.includes(orderedIds[idx - 1])
+  }
+
+  const handleToggle = (subtopic: CurriculumSubtopic) => {
+    if (!isUnlocked(subtopic.id)) return
+    const willOpen = openId !== subtopic.id
+    setOpenId(willOpen ? subtopic.id : null)
+    if (willOpen && !progress.includes(subtopic.id)) {
+      markComplete(level.id, subtopic.id)
+    }
+  }
 
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
       {level.modules.map((module) => (
         <div key={module.id} className="bg-white rounded-2xl border border-slate-100 p-6 hover:shadow-sm transition-shadow">
-          <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">{module.title}</span>
           <h3 className="font-bold text-slate-800 text-lg mb-3">{module.title}</h3>
           <ul className="space-y-1.5">
             {module.subtopics.map((topic) => {
               const isOpen = openId === topic.id
+              const unlocked = isUnlocked(topic.id)
+              const done = progress.includes(topic.id)
               return (
                 <li key={topic.id}>
                   <button
-                    onClick={() => setOpenId(isOpen ? null : topic.id)}
-                    className="w-full flex items-start gap-2 text-sm text-left text-slate-600 hover:text-slate-900 transition-colors group py-0.5"
+                    onClick={() => handleToggle(topic)}
+                    disabled={!unlocked}
+                    className={`w-full flex items-start gap-2 text-sm text-left transition-colors group py-0.5 ${
+                      unlocked ? 'text-slate-600 hover:text-slate-900 cursor-pointer' : 'text-slate-300 cursor-not-allowed'
+                    }`}
                   >
                     <span
-                      className={`mt-0.5 flex-shrink-0 transition-transform ${isOpen ? 'rotate-90 text-slate-500' : 'text-slate-300'}`}
+                      className={`mt-0.5 flex-shrink-0 transition-transform ${isOpen ? 'rotate-90 text-slate-500' : unlocked ? 'text-slate-300' : 'text-slate-200'}`}
                     >
-                      ▸
+                      {unlocked ? '▸' : '🔒'}
                     </span>
                     <span className="flex-1 font-medium">{topic.title}</span>
+                    {done && <span className="text-secondary-500 text-xs flex-shrink-0">✓</span>}
                   </button>
-                  {isOpen && (
+                  {isOpen && unlocked && (
                     <div className="mt-2 mb-3 ml-5 pl-3 border-l-2 border-slate-100 space-y-2.5">
                       <p className="text-xs text-slate-400 italic">{topic.summary}</p>
                       {topic.content.map((p, i) => (
@@ -100,6 +148,7 @@ function AccordionModules({ level }: { level: CurriculumLevel }) {
                           {p}
                         </p>
                       ))}
+                      <CaseExampleCorner subtopic={topic} />
                     </div>
                   )}
                 </li>
@@ -108,6 +157,32 @@ function AccordionModules({ level }: { level: CurriculumLevel }) {
           </ul>
         </div>
       ))}
+    </div>
+  )
+}
+
+function LoginGate() {
+  return (
+    <div className="bg-white rounded-2xl border-2 border-dashed border-slate-200 p-10 text-center">
+      <p className="text-3xl mb-3">🔒</p>
+      <p className="font-semibold text-slate-700 mb-2">로그인하면 커리큘럼을 시작할 수 있어요</p>
+      <p className="text-slate-400 text-sm mb-6">
+        순서대로 하나씩 읽으면 다음 진도가 열리는 방식이에요. 로그인 후 나의 진도가 저장돼요.
+      </p>
+      <div className="flex gap-3 justify-center">
+        <Link
+          href="/login"
+          className="bg-primary-600 hover:bg-primary-700 text-white text-sm font-semibold px-6 py-2.5 rounded-xl transition-colors"
+        >
+          로그인
+        </Link>
+        <Link
+          href="/signup"
+          className="bg-white border border-slate-200 hover:border-slate-300 text-slate-700 text-sm font-semibold px-6 py-2.5 rounded-xl transition-colors"
+        >
+          회원가입
+        </Link>
+      </div>
     </div>
   )
 }
@@ -125,6 +200,9 @@ function CurriculumTabs() {
     [activeLevel],
   )
   const styles = levelStyles[level.id]
+  const { nickname, progress, markComplete } = useAuthAndProgress()
+  const isLoggedIn = !!nickname
+  const isLoading = nickname === undefined
 
   return (
     <>
@@ -162,11 +240,22 @@ function CurriculumTabs() {
           </div>
         </div>
 
-        {level.id === 'beginner' ? <BeginnerModules /> : <AccordionModules level={level} />}
+        {isLoading ? (
+          <p className="text-center text-slate-400 text-sm py-10">불러오는 중...</p>
+        ) : isLoggedIn ? (
+          <ModuleAccordion
+            level={level}
+            isLoggedIn={isLoggedIn}
+            progress={progress[level.id] ?? []}
+            markComplete={markComplete}
+          />
+        ) : (
+          <LoginGate />
+        )}
 
-        {level.id !== 'beginner' && (
+        {isLoggedIn && (
           <p className="text-xs text-slate-400 mt-5 px-1">
-            💡 소제목을 클릭하면 해당 개념 설명이 바로 펼쳐져요.
+            💡 열려 있는 소제목을 클릭하면 설명과 사례 코너가 펼쳐지고, 다음 주제가 열려요.
           </p>
         )}
       </section>
@@ -183,14 +272,14 @@ export default function CurriculumPage() {
           <h1 className="text-4xl font-bold text-slate-800 mb-4">커리큘럼</h1>
           <p className="text-slate-500 text-lg max-w-2xl mx-auto">
             초급 · 중급 · 고급 3단계로 AI를 처음부터 실전까지 배웁니다.
-            모르는 게 있으면 언제든 엘라이 쌤에게 질문하세요!
+            모르는 게 있으면 언제든 AI쌤에게 질문하세요!
           </p>
           <Link
             href="/chat"
             className="inline-flex items-center gap-2 mt-6 bg-primary-600 hover:bg-primary-700 text-white text-sm font-medium px-5 py-2.5 rounded-lg transition-colors"
           >
             <span>🤖</span>
-            <span>엘라이 쌤에게 커리큘럼 질문하기</span>
+            <span>AI쌤에게 커리큘럼 질문하기</span>
           </Link>
         </div>
 
@@ -202,13 +291,13 @@ export default function CurriculumPage() {
         <div className="mt-16 text-center bg-gradient-to-r from-primary-600 to-primary-700 rounded-3xl p-12 text-white">
           <h2 className="text-2xl font-bold mb-3">어디서부터 시작해야 할지 모르겠나요?</h2>
           <p className="text-primary-100 mb-6">
-            처음이라면 <strong>초급 → Week 1-1</strong>부터 시작하세요. 5분이면 충분해요.
+            처음이라면 <strong>초급</strong>부터 로그인 후 순서대로 시작하세요.
           </p>
           <Link
             href="/lessons"
             className="inline-block bg-white text-primary-700 hover:bg-primary-50 font-bold px-8 py-3.5 rounded-xl transition-colors"
           >
-            🌱 초급 AI 상식 시작하기
+            🌱 AI 상식 4주 코스도 확인해보세요
           </Link>
         </div>
       </div>

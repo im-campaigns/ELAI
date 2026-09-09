@@ -1,7 +1,8 @@
 import { notFound } from 'next/navigation'
 import Link from 'next/link'
-import { getLessonBySlug, getAdjacentLessons, getAllLessons, formatPublishedDate } from '@/lib/lessons'
+import { getLessonBySlug, getAdjacentLessons, getAllLessons } from '@/lib/lessons'
 import QuizCard from '@/components/QuizCard'
+import LessonVisuals from '@/components/LessonVisuals'
 
 type Props = { params: { slug: string } }
 
@@ -46,7 +47,6 @@ export default function LessonPage({ params }: Props) {
               </span>
               <div className="flex items-center gap-3 text-xs text-slate-400">
                 <span>⏱ {lesson.readTime} 읽기</span>
-                <span>{formatPublishedDate(lesson.publishedAt)}</span>
               </div>
             </div>
           </div>
@@ -87,6 +87,9 @@ export default function LessonPage({ params }: Props) {
             ))}
           </div>
         </div>
+
+        {/* Multi-content: visual + chart */}
+        <LessonVisuals chart={lesson.chart} visual={lesson.visual} />
 
         {/* Quiz */}
         <div className="mb-8">

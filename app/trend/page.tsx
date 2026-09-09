@@ -12,7 +12,7 @@ const filters: { id: PostCategory | 'all'; label: string }[] = [
   { id: 'interview', label: CATEGORY_LABELS.interview },
 ]
 
-export default function PostsPage() {
+export default function TrendPage() {
   const [active, setActive] = useState<PostCategory | 'all'>('all')
   const posts = useMemo(() => getAllPosts(), [])
   const filtered = active === 'all' ? posts : posts.filter((p) => p.category === active)
@@ -22,9 +22,12 @@ export default function PostsPage() {
       <div className="max-w-5xl mx-auto">
         {/* Header */}
         <div className="text-center mb-12">
-          <h1 className="text-4xl font-bold text-slate-800 mb-4">포스팅</h1>
+          <div className="inline-block bg-primary-100 text-primary-700 text-sm font-semibold px-4 py-1.5 rounded-full mb-4">
+            📰 매주 월요일 새 소식 업데이트
+          </div>
+          <h1 className="text-4xl font-bold text-slate-800 mb-4">트렌드</h1>
           <p className="text-slate-500 text-lg">
-            AI 트렌드, 칼럼, 인터뷰까지 — 읽고 보는 재미가 있는 AI 이야기들
+            AI 트렌드, 칼럼, 인터뷰까지 — 텍스트·이미지·영상·도표로 보는 AI 이야기들
           </p>
         </div>
 
@@ -50,7 +53,7 @@ export default function PostsPage() {
           {filtered.map((post) => (
             <Link
               key={post.id}
-              href={`/posts/${post.slug}`}
+              href={`/trend/${post.slug}`}
               className="group bg-white rounded-2xl border border-slate-100 overflow-hidden hover:shadow-md hover:border-slate-200 transition-all flex flex-col"
             >
               {post.mediaType === 'image' && (
@@ -88,6 +91,9 @@ export default function PostsPage() {
                     {post.emoji} {CATEGORY_LABELS[post.category]}
                   </span>
                   <span className="text-xs text-slate-400">{post.readTime} 읽기</span>
+                  {post.chart && (
+                    <span className="text-xs text-slate-400">· 📊 도표 포함</span>
+                  )}
                 </div>
                 <h2 className="font-bold text-slate-800 text-lg mb-3 group-hover:text-primary-600 transition-colors leading-snug">
                   {post.title}
@@ -116,13 +122,13 @@ export default function PostsPage() {
             글을 읽다가 모르는 게 생겼나요?
           </p>
           <p className="text-slate-500 text-sm mb-5">
-            엘라이 쌤에게 바로 질문하면 즉각적인 설명을 받을 수 있어요.
+            AI쌤에게 바로 질문하면 즉각적인 설명을 받을 수 있어요.
           </p>
           <Link
             href="/chat"
             className="inline-block bg-primary-600 hover:bg-primary-700 text-white font-semibold px-7 py-3 rounded-xl transition-colors text-sm"
           >
-            🤖 엘라이 쌤에게 질문하기
+            🤖 AI쌤에게 질문하기
           </Link>
         </div>
       </div>

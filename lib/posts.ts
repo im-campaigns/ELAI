@@ -1,15 +1,16 @@
-import { posts as postsData, type Post, type PostCategory } from '@/data/posts'
+import postsData from '@/data/posts.json'
+import type { Post, PostCategory } from '@/data/posts'
 
-export type { Post, PostCategory } from '@/data/posts'
+export type { Post, PostCategory, PostChart, PostChartRow } from '@/data/posts'
 
 function sortPosts(items: Post[]): Post[] {
-  return [...items].sort(
+  return [...(items as Post[])].sort(
     (a, b) => new Date(b.publishedAt).getTime() - new Date(a.publishedAt).getTime(),
   )
 }
 
 export function getAllPosts(): Post[] {
-  return sortPosts(postsData)
+  return sortPosts(postsData.posts as Post[])
 }
 
 export function getPostsByCategory(category: PostCategory | 'all'): Post[] {
@@ -28,7 +29,7 @@ function decodeSlug(slug: string): string {
 
 export function getPostBySlug(slug: string): Post | undefined {
   const decoded = decodeSlug(slug)
-  return postsData.find((p) => p.slug === decoded)
+  return (postsData.posts as Post[]).find((p) => p.slug === decoded)
 }
 
 export function getAdjacentPosts(slug: string): { prev: Post | null; next: Post | null } {

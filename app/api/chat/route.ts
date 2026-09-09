@@ -1,7 +1,9 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { NextRequest } from 'next/server'
+import { getSessionUserId } from '@/lib/auth'
+import { getDb } from '@/lib/db'
 
-const systemPrompt = `당신은 ELAI(Easy Learning AI)의 AI 채팅 강사 "엘라이 쌤"입니다.
+const systemPrompt = `당신은 ELAI(Easy Learning AI)의 AI 채팅 강사 "AI쌤"입니다.
 
 역할:
 - AI, 머신러닝, 딥러닝, 데이터 과학에 관한 질문에 답변합니다
@@ -11,7 +13,7 @@ const systemPrompt = `당신은 ELAI(Easy Learning AI)의 AI 채팅 강사 "엘�
 - 한국어로 답변하되, 기술 용어는 영어와 한국어를 병기합니다
 
 페르소나:
-- 이름은 "엘라이 쌤"이며, 옆집 친한 선생님처럼 편안하고 다정한 말투를 씁니다
+- 이름은 "AI쌤"이며, 옆집 친한 선생님처럼 편안하고 다정한 말투를 씁니다
 - 이모지를 적절히 섞어 친근한 분위기를 유지합니다 (과하지 않게)
 - "틀린 질문은 없다"는 자세로 어떤 질문이든 환영합니다
 - 복잡한 개념도 단계별로 차근차근, 격려하는 톤으로 설명합니다
@@ -35,9 +37,18 @@ function errorMessageFor(err: unknown): { message: string; status: number } {
     return { message: 'AI 서버와 연결이 원활하지 않아요. 네트워크 상태를 확인하고 다시 시도해주세요.', status: 503 }
   }
   if (err instanceof Anthropic.APIError) {
-    return { message: '엘라이 쌤이 잠시 답변을 만들지 못했어요. 잠시 후 다시 시도해주세요.', status: 502 }
+    return { message: 'AI쌤이 잠시 답변을 만들지 못했어요. 잠시 후 다시 시도해주세요.', status: 502 }
   }
   return { message: '알 수 없는 오류가 발생했어요. 잠시 후 다시 시도해주세요.', status: 500 }
+}
+
+async function saveMessage(userId: string, role: 'user' | 'assistant', content: string) {
+  if (!content.trim()) return
+  try {
+    await getDb().from('chat_messages').insert({ user_id: userId, role, content })
+  } catch (err) {
+    console.error('[chat] 히스토리 저장 실패:', err)
+  }
 }
 
 export async function POST(req: NextRequest) {
@@ -68,6 +79,12 @@ export async function POST(req: NextRequest) {
     )
   }
 
+  const userId = getSessionUserId()
+  const lastUserMessage = messages[messages.length - 1]
+  if (userId && lastUserMessage?.role === 'user' && typeof lastUserMessage.content === 'string') {
+    await saveMessage(userId, 'user', lastUserMessage.content)
+  }
+
   const client = new Anthropic()
 
   let stream: ReturnType<typeof client.messages.stream>
@@ -91,19 +108,23 @@ export async function POST(req: NextRequest) {
 
   const readableStream = new ReadableStream({
     async start(controller) {
+      let assistantText = ''
       try {
         for await (const chunk of stream) {
           if (chunk.type === 'content_block_delta' && chunk.delta.type === 'text_delta') {
+            assistantText += chunk.delta.text
             controller.enqueue(encoder.encode(chunk.delta.text))
           }
         }
         controller.close()
+        if (userId) await saveMessage(userId, 'assistant', assistantText)
       } catch (err) {
         console.error('[chat] 스트리밍 중 오류:', err)
         const { message } = errorMessageFor(err)
         // 스트림이 이미 시작된 뒤라 상태 코드는 바꿀 수 없으니, 본문에 안내 메시지를 흘려보낸다
         controller.enqueue(encoder.encode(`\n\n⚠️ ${message}`))
         controller.close()
+        if (userId && assistantText) await saveMessage(userId, 'assistant', assistantText)
       }
     },
     cancel() {

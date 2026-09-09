@@ -3,7 +3,7 @@ import { getAllLessons, getLessonsByWeek, DAY_LABELS } from '@/lib/lessons'
 
 export const metadata = {
   title: 'AI 상식 | ELAI',
-  description: '평일 매일 업데이트되는 초급 AI 상식. 5분 안에 읽는 핵심 개념, 카드, 퀴즈.',
+  description: '4주 완성 AI 상식 속성 코스. 5분 안에 읽는 핵심 개념, 카드, 도표, 퀴즈로 한 달 만에 끝냅니다.',
 }
 
 export default function LessonsPage() {
@@ -16,12 +16,12 @@ export default function LessonsPage() {
         {/* Header */}
         <div className="text-center mb-14">
           <div className="inline-block bg-secondary-100 text-secondary-700 text-sm font-semibold px-4 py-1.5 rounded-full mb-4">
-            🌱 AI 상식 · 초급 커리큘럼
+            🌱 AI 상식 · 4주 완성 속성 코스
           </div>
           <h1 className="text-4xl font-bold text-slate-800 mb-4">AI 상식</h1>
           <p className="text-slate-500 text-lg max-w-2xl mx-auto leading-relaxed">
-            월~금 매일 새 강의가 업데이트됩니다. Week 단위로 주제를 모아 5일간 배워요.<br />
-            5분 안에 읽는 핵심 개념 + 카드 3장 + 퀴즈 1문제.
+            AI 기초가 없어도 4주(Week 1~4), 총 20강이면 핵심 상식을 익힐 수 있어요.<br />
+            5분 안에 읽는 핵심 개념 + 카드 3장 + 도표 + 퀴즈 1문제.
           </p>
           {firstLesson && (
             <Link
@@ -94,11 +94,11 @@ export default function LessonsPage() {
           ))}
         </div>
 
-        {/* Coming next */}
+        {/* Monthly review notice */}
         <div className="mt-10 bg-white rounded-2xl border-2 border-dashed border-slate-200 p-7 text-center">
           <p className="text-2xl mb-3">🔔</p>
-          <p className="font-semibold text-slate-700 mb-1">평일 매일 새 강의 업데이트</p>
-          <p className="text-slate-400 text-sm">Claude AI가 자동으로 생성하는 초급 강의가 월~금 매일 추가됩니다</p>
+          <p className="font-semibold text-slate-700 mb-1">매달 1일, 최신 정보로 자동 점검</p>
+          <p className="text-slate-400 text-sm">20개 강의 전체를 Claude AI가 매달 자동으로 점검하고 최신 내용으로 업데이트해요</p>
         </div>
 
         {/* CTA */}
