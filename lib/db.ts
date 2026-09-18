@@ -1,4 +1,5 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js'
+import { ConfigError } from '@/lib/errors'
 
 let client: SupabaseClient | null = null
 
@@ -13,8 +14,8 @@ export function getDb(): SupabaseClient {
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY
 
   if (!url || !key) {
-    throw new Error(
-      'SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY가 설정되어 있지 않습니다. .env.local을 확인해주세요.',
+    throw new ConfigError(
+      '회원 데이터베이스가 아직 설정되지 않았어요. 관리자에게 문의해주세요. (SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY 미설정)',
     )
   }
 

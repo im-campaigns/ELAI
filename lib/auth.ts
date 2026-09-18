@@ -2,6 +2,7 @@ import { createHmac, timingSafeEqual } from 'crypto'
 import bcrypt from 'bcryptjs'
 import { cookies } from 'next/headers'
 import { getDb, type DbUser } from '@/lib/db'
+import { ConfigError } from '@/lib/errors'
 
 const USER_COOKIE = 'elai_session'
 const ADMIN_COOKIE = 'elai_admin_session'
@@ -10,7 +11,7 @@ const SESSION_MAX_AGE = 60 * 60 * 24 * 30 // 30 days
 function getSecret(): string {
   const secret = process.env.SESSION_SECRET
   if (!secret) {
-    throw new Error('SESSION_SECRET이 설정되어 있지 않습니다. .env.local을 확인해주세요.')
+    throw new ConfigError('로그인 시스템이 아직 설정되지 않았어요. 관리자에게 문의해주세요. (SESSION_SECRET 미설정)')
   }
   return secret
 }
@@ -78,18 +79,28 @@ export function clearUserSession(): void {
 }
 
 export function getSessionUserId(): string | null {
-  const token = cookies().get(USER_COOKIE)?.value
-  const data = unpack<{ uid: string }>(token)
-  return data?.uid ?? null
+  try {
+    const token = cookies().get(USER_COOKIE)?.value
+    const data = unpack<{ uid: string }>(token)
+    return data?.uid ?? null
+  } catch (err) {
+    console.error('[auth] 세션 확인 실패:', err)
+    return null
+  }
 }
 
 export async function getCurrentUser(): Promise<DbUser | null> {
   const uid = getSessionUserId()
   if (!uid) return null
 
-  const { data, error } = await getDb().from('users').select('*').eq('id', uid).maybeSingle()
-  if (error || !data) return null
-  return data as DbUser
+  try {
+    const { data, error } = await getDb().from('users').select('*').eq('id', uid).maybeSingle()
+    if (error || !data) return null
+    return data as DbUser
+  } catch (err) {
+    console.error('[auth] 사용자 조회 실패:', err)
+    return null
+  }
 }
 
 // ---- Admin session ----
@@ -110,7 +121,12 @@ export function clearAdminSession(): void {
 }
 
 export function isAdminSession(): boolean {
-  const token = cookies().get(ADMIN_COOKIE)?.value
-  const data = unpack<{ admin: boolean }>(token)
-  return data?.admin === true
+  try {
+    const token = cookies().get(ADMIN_COOKIE)?.value
+    const data = unpack<{ admin: boolean }>(token)
+    return data?.admin === true
+  } catch (err) {
+    console.error('[auth] 관리자 세션 확인 실패:', err)
+    return false
+  }
 }

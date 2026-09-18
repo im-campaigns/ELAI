@@ -2,13 +2,23 @@ import { NextResponse } from 'next/server'
 import { getDb } from '@/lib/db'
 import { isAdminSession } from '@/lib/auth'
 import { getOrderedSubtopicIds } from '@/lib/curriculum'
+import { ConfigError } from '@/lib/errors'
 
 export async function GET() {
   if (!isAdminSession()) {
     return NextResponse.json({ error: '관리자 로그인이 필요해요.' }, { status: 401 })
   }
 
-  const db = getDb()
+  let db
+  try {
+    db = getDb()
+  } catch (err) {
+    if (err instanceof ConfigError) {
+      console.error('[admin/users] 설정 오류:', err.message)
+      return NextResponse.json({ error: err.message }, { status: 503 })
+    }
+    throw err
+  }
 
   const [{ data: users, error: usersError }, { data: progress, error: progressError }] = await Promise.all([
     db.from('users').select('id, nickname, email, created_at').order('created_at', { ascending: false }),

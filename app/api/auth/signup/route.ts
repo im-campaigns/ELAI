@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getDb } from '@/lib/db'
 import { hashPassword, createUserSession } from '@/lib/auth'
+import { ConfigError } from '@/lib/errors'
 
 export async function POST(req: NextRequest) {
   let body: { nickname?: string; password?: string; email?: string }
@@ -24,25 +25,34 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: '이메일 형식이 올바르지 않아요.' }, { status: 400 })
   }
 
-  const db = getDb()
+  try {
+    const db = getDb()
 
-  const { data: existing } = await db.from('users').select('id').eq('nickname', nickname).maybeSingle()
-  if (existing) {
-    return NextResponse.json({ error: '이미 사용 중인 닉네임이에요.' }, { status: 409 })
-  }
+    const { data: existing } = await db.from('users').select('id').eq('nickname', nickname).maybeSingle()
+    if (existing) {
+      return NextResponse.json({ error: '이미 사용 중인 닉네임이에요.' }, { status: 409 })
+    }
 
-  const password_hash = await hashPassword(password)
-  const { data: user, error } = await db
-    .from('users')
-    .insert({ nickname, password_hash, email })
-    .select('id')
-    .single()
+    const password_hash = await hashPassword(password)
+    const { data: user, error } = await db
+      .from('users')
+      .insert({ nickname, password_hash, email })
+      .select('id')
+      .single()
 
-  if (error || !user) {
-    console.error('[signup] insert failed:', error)
+    if (error || !user) {
+      console.error('[signup] insert failed:', error)
+      return NextResponse.json({ error: '회원가입에 실패했어요. 잠시 후 다시 시도해주세요.' }, { status: 500 })
+    }
+
+    createUserSession(user.id)
+    return NextResponse.json({ ok: true, nickname })
+  } catch (err) {
+    if (err instanceof ConfigError) {
+      console.error('[signup] 설정 오류:', err.message)
+      return NextResponse.json({ error: err.message }, { status: 503 })
+    }
+    console.error('[signup] 알 수 없는 오류:', err)
     return NextResponse.json({ error: '회원가입에 실패했어요. 잠시 후 다시 시도해주세요.' }, { status: 500 })
   }
-
-  createUserSession(user.id)
-  return NextResponse.json({ ok: true, nickname })
 }

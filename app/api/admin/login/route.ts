@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createAdminSession } from '@/lib/auth'
+import { ConfigError } from '@/lib/errors'
 
 const ADMIN_ID = 'admin'
 
@@ -17,6 +18,14 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: '아이디 또는 비밀번호가 올바르지 않아요.' }, { status: 401 })
   }
 
-  createAdminSession()
+  try {
+    createAdminSession()
+  } catch (err) {
+    if (err instanceof ConfigError) {
+      console.error('[admin/login] 설정 오류:', err.message)
+      return NextResponse.json({ error: err.message }, { status: 503 })
+    }
+    throw err
+  }
   return NextResponse.json({ ok: true })
 }
