@@ -4,6 +4,7 @@ import { getCurrentUser } from '@/lib/auth'
 import { getDb } from '@/lib/db'
 import { curriculumLevels } from '@/data/curriculum'
 import LogoutButton from '@/components/LogoutButton'
+import ChangePasswordForm from '@/components/ChangePasswordForm'
 
 export const metadata = {
   title: '마이페이지 | ELAI',
@@ -91,6 +92,8 @@ export default async function MyPage() {
             AI쌤과 이어서 대화하기 →
           </Link>
         </div>
+
+        <ChangePasswordForm />
 
         <div className="text-center">
           <LogoutButton className="text-sm text-slate-400 hover:text-slate-600 transition-colors underline" />

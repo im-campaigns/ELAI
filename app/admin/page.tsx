@@ -2,6 +2,7 @@ import { isAdminSession } from '@/lib/auth'
 import { getDb } from '@/lib/db'
 import { getOrderedSubtopicIds } from '@/lib/curriculum'
 import AdminLoginForm from '@/components/AdminLoginForm'
+import AdminUserTable from '@/components/AdminUserTable'
 import LogoutButton from '@/components/LogoutButton'
 
 export const metadata = {
@@ -33,6 +34,7 @@ async function loadUsers() {
   return (users ?? []).map((u) => {
     const done = progressByUser.get(u.id) ?? { beginner: 0, intermediate: 0, advanced: 0 }
     return {
+      id: u.id as string,
       nickname: u.nickname as string,
       email: u.email as string | null,
       createdAt: u.created_at as string,
@@ -68,41 +70,7 @@ export default async function AdminPage() {
           />
         </div>
 
-        <div className="bg-white rounded-2xl border border-slate-100 overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="border-b border-slate-100 text-left text-slate-400 text-xs uppercase tracking-wider">
-                <th className="px-5 py-3 font-semibold">닉네임</th>
-                <th className="px-5 py-3 font-semibold">이메일</th>
-                <th className="px-5 py-3 font-semibold">가입일</th>
-                <th className="px-5 py-3 font-semibold">초급 진도</th>
-                <th className="px-5 py-3 font-semibold">중급 진도</th>
-                <th className="px-5 py-3 font-semibold">고급 진도</th>
-              </tr>
-            </thead>
-            <tbody>
-              {users.map((u) => (
-                <tr key={u.nickname} className="border-b border-slate-50 last:border-0">
-                  <td className="px-5 py-3 font-medium text-slate-700">{u.nickname}</td>
-                  <td className="px-5 py-3 text-slate-500">{u.email ?? '—'}</td>
-                  <td className="px-5 py-3 text-slate-500">
-                    {new Date(u.createdAt).toLocaleDateString('ko-KR')}
-                  </td>
-                  <td className="px-5 py-3 text-slate-600">{u.progress.beginner}</td>
-                  <td className="px-5 py-3 text-slate-600">{u.progress.intermediate}</td>
-                  <td className="px-5 py-3 text-slate-600">{u.progress.advanced}</td>
-                </tr>
-              ))}
-              {users.length === 0 && (
-                <tr>
-                  <td colSpan={6} className="px-5 py-10 text-center text-slate-400">
-                    아직 가입한 회원이 없어요.
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
+        <AdminUserTable users={users} />
       </div>
     </div>
   )
