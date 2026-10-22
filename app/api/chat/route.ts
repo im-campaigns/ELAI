@@ -1,7 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { NextRequest } from 'next/server'
-import { getSessionUserId } from '@/lib/auth'
-import { getDb } from '@/lib/db'
+import { getCurrentUser } from '@/lib/auth'
+import { getDb, type AiInterest, type AiLevel } from '@/lib/db'
 
 const systemPrompt = `당신은 ELAI(Easy Learning AI)의 AI 채팅 강사 "AI쌤"입니다.
 
@@ -22,6 +22,33 @@ const systemPrompt = `당신은 ELAI(Easy Learning AI)의 AI 채팅 강사 "AI�
 - 핵심을 먼저 말하고, 이후 설명을 덧붙입니다
 - 필요시 마크다운으로 구조화합니다 (헤더, 목록, 코드 블록 등)
 - 추가로 공부하면 좋을 방향을 간략히 제안합니다`
+
+const levelLabel: Record<AiLevel, string> = {
+  beginner: 'AI 입문자',
+  intermediate: 'AI를 조금 써본 중급자',
+  advanced: 'AI를 자주 쓰는 고급 사용자',
+}
+
+const interestLabel: Record<AiInterest, string> = {
+  업무활용: '업무에 AI를 활용하는 것',
+  공부: 'AI 자체를 공부하는 것',
+  창작: '창작 활동에 AI를 활용하는 것',
+  기타: 'AI를 폭넓게 활용하는 것',
+}
+
+function buildSystemPrompt(user: { job: string | null; ai_interest: AiInterest | null; ai_level: AiLevel | null; onboarding_done: boolean } | null): string {
+  if (!user || !user.onboarding_done || !user.ai_level) return systemPrompt
+
+  const personalization = [
+    `이 사용자는 ${user.job ? `"${user.job}"이고 ` : ''}${levelLabel[user.ai_level]}입니다.`,
+    user.ai_interest ? `주로 ${interestLabel[user.ai_interest]}에 관심이 있습니다.` : '',
+    '이 배경에 맞춰 설명 난이도를 조절하고, 가능하면 사용자의 직업·관심 분야와 연결된 예시를 들어주세요.',
+  ]
+    .filter(Boolean)
+    .join(' ')
+
+  return `${systemPrompt}\n\n[맞춤 설명 가이드]\n${personalization}`
+}
 
 function errorMessageFor(err: unknown): { message: string; status: number } {
   if (err instanceof Anthropic.AuthenticationError) {
@@ -79,7 +106,8 @@ export async function POST(req: NextRequest) {
     )
   }
 
-  const userId = getSessionUserId()
+  const user = await getCurrentUser()
+  const userId = user?.id ?? null
   const lastUserMessage = messages[messages.length - 1]
   if (userId && lastUserMessage?.role === 'user' && typeof lastUserMessage.content === 'string') {
     await saveMessage(userId, 'user', lastUserMessage.content)
@@ -92,7 +120,7 @@ export async function POST(req: NextRequest) {
     stream = client.messages.stream({
       model: 'claude-opus-4-8',
       max_tokens: 1024,
-      system: systemPrompt,
+      system: buildSystemPrompt(user),
       messages,
     })
   } catch (err) {

@@ -1,10 +1,24 @@
 'use client'
 
 import { useState, useRef, useEffect } from 'react'
+import Link from 'next/link'
 
 type Message = {
   role: 'user' | 'assistant'
   content: string
+}
+
+type CurriculumCta = {
+  nickname: string
+  level: 'beginner' | 'intermediate' | 'advanced'
+}
+
+const ONBOARDING_GREETING = '안녕하세요! 저는 AI쌤이에요 😊 어떤 일을 하고 계세요?'
+
+const levelMeta: Record<CurriculumCta['level'], { emoji: string; label: string }> = {
+  beginner: { emoji: '🌱', label: '초급' },
+  intermediate: { emoji: '🚀', label: '중급' },
+  advanced: { emoji: '⚡', label: '고급' },
 }
 
 const suggestions = [
@@ -19,6 +33,8 @@ export default function ChatPage() {
   const [input, setInput] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const [historyLoaded, setHistoryLoaded] = useState(false)
+  const [isOnboarding, setIsOnboarding] = useState(false)
+  const [curriculumCta, setCurriculumCta] = useState<CurriculumCta | null>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLTextAreaElement>(null)
 
@@ -27,25 +43,49 @@ export default function ChatPage() {
   }, [messages, isLoading])
 
   useEffect(() => {
-    fetch('/api/chat/history')
-      .then((res) => res.json())
-      .then((data) => {
-        if (Array.isArray(data?.messages) && data.messages.length > 0) {
-          setMessages(data.messages)
-        }
-      })
-      .catch(() => {})
-      .finally(() => setHistoryLoaded(true))
+    Promise.all([
+      fetch('/api/auth/me').then((res) => res.json()).catch(() => ({ user: null })),
+      fetch('/api/chat/history').then((res) => res.json()).catch(() => ({ messages: [] })),
+    ]).then(([meData, historyData]) => {
+      const user = meData?.user ?? null
+      const history: Message[] = Array.isArray(historyData?.messages) ? historyData.messages : []
+
+      if (user && user.onboardingDone === false) {
+        setIsOnboarding(true)
+        setMessages([{ role: 'assistant', content: ONBOARDING_GREETING }, ...history])
+      } else if (history.length > 0) {
+        setMessages(history)
+      }
+    }).finally(() => setHistoryLoaded(true))
   }, [])
 
-  const sendMessage = async (text: string) => {
-    if (!text.trim() || isLoading) return
+  const sendOnboardingMessage = async (newMessages: Message[]) => {
+    try {
+      const res = await fetch('/api/chat/onboarding', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ messages: newMessages }),
+      })
+      const data = await res.json()
+      if (!res.ok) {
+        setMessages((prev) => [...prev, { role: 'assistant', content: data?.error ?? '죄송해요, 오류가 발생했어요.' }])
+        return
+      }
 
-    const newMessages: Message[] = [...messages, { role: 'user', content: text }]
-    setMessages(newMessages)
-    setInput('')
-    setIsLoading(true)
+      setMessages((prev) => [...prev, { role: 'assistant', content: data.reply }])
 
+      if (data.done) {
+        setIsOnboarding(false)
+        const meRes = await fetch('/api/auth/me').then((r) => r.json()).catch(() => null)
+        const nickname = meRes?.user?.nickname ?? '회원'
+        setCurriculumCta({ nickname, level: data.level ?? 'beginner' })
+      }
+    } catch {
+      setMessages((prev) => [...prev, { role: 'assistant', content: '네트워크 오류가 발생했어요. 잠시 후 다시 시도해주세요.' }])
+    }
+  }
+
+  const sendChatMessage = async (newMessages: Message[]) => {
     try {
       const res = await fetch('/api/chat', {
         method: 'POST',
@@ -92,6 +132,23 @@ export default function ChatPage() {
         }
         return [...updated, { role: 'assistant', content: message }]
       })
+    }
+  }
+
+  const sendMessage = async (text: string) => {
+    if (!text.trim() || isLoading) return
+
+    const newMessages: Message[] = [...messages, { role: 'user', content: text }]
+    setMessages(newMessages)
+    setInput('')
+    setIsLoading(true)
+
+    try {
+      if (isOnboarding) {
+        await sendOnboardingMessage(newMessages)
+      } else {
+        await sendChatMessage(newMessages)
+      }
     } finally {
       setIsLoading(false)
       inputRef.current?.focus()
@@ -113,11 +170,13 @@ export default function ChatPage() {
           <div className="w-10 h-10 rounded-full bg-primary-100 flex items-center justify-center text-xl">🤖</div>
           <div>
             <h1 className="font-bold text-slate-800">AI쌤</h1>
-            <p className="text-xs text-slate-500">AI · ML · DL 무엇이든 물어보세요 · Powered by Claude</p>
+            <p className="text-xs text-slate-500">
+              {isOnboarding ? '첫 만남이에요! 몇 가지만 물어볼게요' : 'AI · ML · DL 무엇이든 물어보세요 · Powered by Claude'}
+            </p>
           </div>
           <span className="ml-auto flex items-center gap-1.5 text-xs text-secondary-600 bg-secondary-50 px-3 py-1.5 rounded-full">
             <span className="w-1.5 h-1.5 rounded-full bg-secondary-500 inline-block animate-pulse" />
-            온라인
+            {isOnboarding ? '온보딩 중' : '온라인'}
           </span>
         </div>
       </div>
@@ -181,6 +240,23 @@ export default function ChatPage() {
                   <span className="typing-dot w-2 h-2 bg-slate-400 rounded-full inline-block" />
                 </span>
               </div>
+            </div>
+          )}
+
+          {curriculumCta && (
+            <div className="bg-gradient-to-r from-primary-50 to-secondary-50 border border-primary-100 rounded-2xl p-5 text-center">
+              <p className="font-bold text-slate-800 mb-1">
+                {curriculumCta.nickname}님 맞춤 커리큘럼을 준비했어요! 🎉
+              </p>
+              <p className="text-sm text-slate-500 mb-4">
+                {levelMeta[curriculumCta.level].emoji} {levelMeta[curriculumCta.level].label} 단계부터 시작해보세요.
+              </p>
+              <Link
+                href={`/curriculum?level=${curriculumCta.level}`}
+                className="inline-block bg-primary-600 hover:bg-primary-700 text-white text-sm font-semibold px-5 py-2.5 rounded-xl transition-colors"
+              >
+                내 커리큘럼 보러가기 →
+              </Link>
             </div>
           )}
 

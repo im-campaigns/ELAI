@@ -35,3 +35,15 @@ alter table chat_messages enable row level security;
 alter table curriculum_progress enable row level security;
 -- No policies are defined on purpose: the anon/authenticated roles get zero access.
 -- All access happens through the server using the service_role key, which bypasses RLS.
+
+-- AI쌤 온보딩 + 개인화: 가입 직후 1:1교육 대화로 파악하는 프로필 정보.
+alter table users add column if not exists job text;
+alter table users add column if not exists ai_interest text
+  check (ai_interest is null or ai_interest in ('업무활용', '공부', '창작', '기타'));
+alter table users add column if not exists ai_level text
+  check (ai_level is null or ai_level in ('beginner', 'intermediate', 'advanced'));
+alter table users add column if not exists onboarding_done boolean not null default false;
+
+-- 이 마이그레이션 실행 시점에 이미 존재하던 회원은 온보딩 대화를 강제로 띄우지 않도록 완료 처리한다.
+-- (이후 새로 가입하는 회원은 onboarding_done 기본값 false를 그대로 받는다)
+update users set onboarding_done = true where onboarding_done = false;

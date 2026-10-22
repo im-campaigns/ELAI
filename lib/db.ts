@@ -25,12 +25,19 @@ export function getDb(): SupabaseClient {
   return client
 }
 
+export type AiInterest = '업무활용' | '공부' | '창작' | '기타'
+export type AiLevel = 'beginner' | 'intermediate' | 'advanced'
+
 export type DbUser = {
   id: string
   nickname: string
   password_hash: string
   email: string | null
   created_at: string
+  job: string | null
+  ai_interest: AiInterest | null
+  ai_level: AiLevel | null
+  onboarding_done: boolean
 }
 
 export type DbChatMessage = {

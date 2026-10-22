@@ -45,6 +45,12 @@ export default async function MyPage() {
           </div>
           <h1 className="text-3xl font-bold text-slate-800">{user.nickname}님, 안녕하세요!</h1>
           {user.email && <p className="text-slate-400 text-sm mt-2">{user.email}</p>}
+          {user.onboarding_done && (user.job || user.ai_level) && (
+            <p className="text-sm text-slate-500 mt-2">
+              {user.job && <>{user.job} · </>}
+              {user.ai_level && <>{levelMeta[user.ai_level].emoji} {levelMeta[user.ai_level].label}</>}
+            </p>
+          )}
         </div>
 
         <div className="bg-white rounded-2xl border border-slate-100 p-6 mb-6">

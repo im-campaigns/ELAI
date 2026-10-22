@@ -46,7 +46,7 @@ export async function POST(req: NextRequest) {
     }
 
     createUserSession(user.id)
-    return NextResponse.json({ ok: true, nickname })
+    return NextResponse.json({ ok: true, nickname, onboardingDone: false })
   } catch (err) {
     if (err instanceof ConfigError) {
       console.error('[signup] 설정 오류:', err.message)
