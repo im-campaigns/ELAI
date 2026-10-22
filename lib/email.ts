@@ -1,7 +1,9 @@
 import { ConfigError } from '@/lib/errors'
 
 const RESEND_API_URL = 'https://api.resend.com/emails'
-const FROM_ADDRESS = 'ELAI <noreply@elai-zeta.vercel.app>'
+// Resend 무료 플랜은 도메인 인증 전에는 noreply@elai-zeta.vercel.app 같은 커스텀 도메인에서 발송할 수 없고,
+// 플랫폼이 제공하는 onboarding@resend.dev 에서만 발송 가능하다. 도메인을 인증하면 RESEND_FROM_EMAIL로 교체한다.
+const FROM_ADDRESS = process.env.RESEND_FROM_EMAIL || 'ELAI <onboarding@resend.dev>'
 
 export async function sendTempPasswordEmail(to: string, tempPassword: string): Promise<void> {
   const apiKey = process.env.RESEND_API_KEY
@@ -27,6 +29,7 @@ export async function sendTempPasswordEmail(to: string, tempPassword: string): P
 
   if (!res.ok) {
     const detail = await res.text().catch(() => '')
+    console.error(`[email] Resend 발송 실패 (status ${res.status}):`, detail)
     throw new Error(`이메일 발송에 실패했어요. (status ${res.status}) ${detail}`)
   }
 }
