@@ -1,8 +1,10 @@
 import { isAdminSession } from '@/lib/auth'
 import { getDb } from '@/lib/db'
+import type { AiInterest, AiLevel, DbRoomMember, DbStudyRoom } from '@/lib/db'
 import { getOrderedSubtopicIds } from '@/lib/curriculum'
 import AdminLoginForm from '@/components/AdminLoginForm'
 import AdminUserTable from '@/components/AdminUserTable'
+import AdminRoomPanel, { type AdminPendingApplication, type AdminRoomOverview } from '@/components/AdminRoomPanel'
 import LogoutButton from '@/components/LogoutButton'
 
 export const metadata = {
@@ -47,12 +49,66 @@ async function loadUsers() {
   })
 }
 
+type MemberWithUser = Pick<DbRoomMember, 'room_id' | 'user_id' | 'status' | 'requested_at'> & {
+  users: { nickname: string; job: string | null; ai_level: AiLevel | null; ai_interest: AiInterest | null } | null
+}
+
+async function loadRoomsAdmin() {
+  const db = getDb()
+  const [{ data: rooms }, { data: members }] = await Promise.all([
+    db.from('study_rooms').select('*').order('created_at', { ascending: true }),
+    db
+      .from('room_members')
+      .select('room_id, user_id, status, requested_at, users(nickname, job, ai_level, ai_interest)')
+      .order('requested_at', { ascending: true }),
+  ])
+
+  const roomList = (rooms ?? []) as DbStudyRoom[]
+  const roomNameById = new Map(roomList.map((r) => [r.id, r.name]))
+
+  const approvedCountByRoom = new Map<string, number>()
+  const pendingCountByRoom = new Map<string, number>()
+  const pending: AdminPendingApplication[] = []
+
+  for (const m of (members ?? []) as unknown as MemberWithUser[]) {
+    if (m.status === 'approved') {
+      approvedCountByRoom.set(m.room_id, (approvedCountByRoom.get(m.room_id) ?? 0) + 1)
+    } else if (m.status === 'pending') {
+      pendingCountByRoom.set(m.room_id, (pendingCountByRoom.get(m.room_id) ?? 0) + 1)
+      pending.push({
+        roomId: m.room_id,
+        userId: m.user_id,
+        roomName: roomNameById.get(m.room_id) ?? '알 수 없는 방',
+        nickname: m.users?.nickname ?? '알 수 없음',
+        job: m.users?.job ?? null,
+        level: m.users?.ai_level ?? null,
+        interest: m.users?.ai_interest ?? null,
+        requestedAt: m.requested_at,
+      })
+    }
+  }
+
+  const roomsResult: AdminRoomOverview[] = roomList.map((room) => ({
+    id: room.id,
+    name: room.name,
+    description: room.description,
+    level: room.level,
+    interest: room.interest,
+    maxMembers: room.max_members,
+    approvedCount: approvedCountByRoom.get(room.id) ?? 0,
+    pendingCount: pendingCountByRoom.get(room.id) ?? 0,
+  }))
+
+  return { rooms: roomsResult, pending }
+}
+
 export default async function AdminPage() {
   if (!isAdminSession()) {
     return <AdminLoginForm />
   }
 
   const users = await loadUsers()
+  const { rooms, pending } = await loadRoomsAdmin()
 
   return (
     <div className="min-h-screen bg-slate-50 py-12 px-4">
@@ -71,6 +127,11 @@ export default async function AdminPage() {
         </div>
 
         <AdminUserTable users={users} />
+
+        <div className="mt-12">
+          <h1 className="text-2xl font-bold text-slate-800 mb-6">그룹과외</h1>
+          <AdminRoomPanel rooms={rooms} pending={pending} />
+        </div>
       </div>
     </div>
   )

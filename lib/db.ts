@@ -54,3 +54,23 @@ export type DbProgress = {
   subtopic_id: string
   completed_at: string
 }
+
+export type RoomMemberStatus = 'pending' | 'approved' | 'rejected'
+
+export type DbStudyRoom = {
+  id: string
+  name: string
+  description: string
+  level: AiLevel
+  interest: AiInterest
+  max_members: number
+  created_at: string
+}
+
+export type DbRoomMember = {
+  room_id: string
+  user_id: string
+  status: RoomMemberStatus
+  requested_at: string
+  decided_at: string | null
+}

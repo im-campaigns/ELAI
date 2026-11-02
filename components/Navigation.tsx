@@ -10,6 +10,7 @@ const navLinks = [
   { href: '/lessons', label: '🌱 AI 상식' },
   { href: '/curriculum', label: '커리큘럼' },
   { href: '/chat', label: '1:1교육' },
+  { href: '/group', label: '그룹과외' },
   { href: '/trend', label: '트렌드' },
 ]
 
