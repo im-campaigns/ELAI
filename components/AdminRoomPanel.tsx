@@ -36,10 +36,37 @@ const levelLabel: Record<string, string> = {
   advanced: '고급',
 }
 
+type RoomMessage = {
+  id: string
+  senderType: 'member' | 'ai_teacher'
+  nickname: string
+  content: string
+  createdAt: string
+}
+
 export default function AdminRoomPanel({ rooms, pending }: Props) {
   const router = useRouter()
   const [decidingKey, setDecidingKey] = useState<string | null>(null)
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
+
+  const [viewingRoom, setViewingRoom] = useState<{ id: string; name: string } | null>(null)
+  const [roomMessages, setRoomMessages] = useState<RoomMessage[]>([])
+  const [messagesLoading, setMessagesLoading] = useState(false)
+
+  const openRoomMessages = async (room: { id: string; name: string }) => {
+    setViewingRoom(room)
+    setMessagesLoading(true)
+    setRoomMessages([])
+    try {
+      const res = await fetch(`/api/admin/rooms/${room.id}/messages`)
+      const data = await res.json()
+      setRoomMessages(Array.isArray(data?.messages) ? data.messages : [])
+    } catch {
+      setRoomMessages([])
+    } finally {
+      setMessagesLoading(false)
+    }
+  }
 
   const [form, setForm] = useState({
     name: '',
@@ -182,6 +209,7 @@ export default function AdminRoomPanel({ rooms, pending }: Props) {
                 <th className="px-5 py-3 font-semibold">수준 / 관심분야</th>
                 <th className="px-5 py-3 font-semibold">승인 인원 / 정원</th>
                 <th className="px-5 py-3 font-semibold">대기 인원</th>
+                <th className="px-5 py-3 font-semibold">대화</th>
               </tr>
             </thead>
             <tbody>
@@ -195,11 +223,19 @@ export default function AdminRoomPanel({ rooms, pending }: Props) {
                     {r.approvedCount} / {r.maxMembers}
                   </td>
                   <td className="px-5 py-3 text-slate-600">{r.pendingCount}</td>
+                  <td className="px-5 py-3">
+                    <button
+                      onClick={() => openRoomMessages({ id: r.id, name: r.name })}
+                      className="text-xs font-medium text-primary-600 hover:text-primary-700 border border-primary-200 rounded-lg px-3 py-1.5 transition-colors"
+                    >
+                      대화 보기
+                    </button>
+                  </td>
                 </tr>
               ))}
               {rooms.length === 0 && (
                 <tr>
-                  <td colSpan={4} className="px-5 py-10 text-center text-slate-400">
+                  <td colSpan={5} className="px-5 py-10 text-center text-slate-400">
                     아직 개설된 방이 없어요.
                   </td>
                 </tr>
@@ -278,6 +314,52 @@ export default function AdminRoomPanel({ rooms, pending }: Props) {
           </button>
         </form>
       </div>
+
+      {viewingRoom && (
+        <div
+          className="fixed inset-0 bg-slate-900/40 flex items-center justify-center p-4 z-50"
+          onClick={() => setViewingRoom(null)}
+        >
+          <div
+            className="bg-white rounded-2xl w-full max-w-lg max-h-[80vh] flex flex-col overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
+              <h3 className="font-bold text-slate-800">{viewingRoom.name} · 최근 대화</h3>
+              <button
+                onClick={() => setViewingRoom(null)}
+                className="text-slate-400 hover:text-slate-600 text-sm"
+              >
+                닫기
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto px-5 py-4 space-y-3">
+              {messagesLoading && <p className="text-center text-sm text-slate-400 py-10">불러오는 중...</p>}
+              {!messagesLoading && roomMessages.length === 0 && (
+                <p className="text-center text-sm text-slate-400 py-10">대화 기록이 없어요.</p>
+              )}
+              {!messagesLoading &&
+                roomMessages.map((m) => (
+                  <div key={m.id} className="text-sm">
+                    <div className="flex items-center gap-1.5 mb-0.5">
+                      {m.senderType === 'ai_teacher' ? (
+                        <span className="text-[10px] font-bold text-white bg-primary-600 rounded-full px-2 py-0.5">
+                          🤖 AI쌤
+                        </span>
+                      ) : (
+                        <span className="font-medium text-slate-600">{m.nickname}</span>
+                      )}
+                      <span className="text-[11px] text-slate-400">
+                        {new Date(m.createdAt).toLocaleString('ko-KR')}
+                      </span>
+                    </div>
+                    <p className="text-slate-700 whitespace-pre-wrap">{m.content}</p>
+                  </div>
+                ))}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

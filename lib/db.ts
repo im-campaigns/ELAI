@@ -74,3 +74,15 @@ export type DbRoomMember = {
   requested_at: string
   decided_at: string | null
 }
+
+export type RoomMessageSenderType = 'member' | 'ai_teacher'
+
+export type DbRoomMessage = {
+  id: string
+  room_id: string
+  user_id: string | null
+  sender_type: RoomMessageSenderType
+  nickname: string
+  content: string
+  created_at: string
+}
