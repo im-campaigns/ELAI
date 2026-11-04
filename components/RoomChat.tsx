@@ -32,8 +32,33 @@ export default function RoomChat({ roomId, currentUserId }: Props) {
   const lastCreatedAtRef = useRef<string | null>(null)
   const isNearBottomRef = useRef(true)
 
+  const pollingRef = useRef(false)
+
+  // 같은 메시지가 화면에 두 번 붙지 않도록 id 기준으로 합치고 시간순으로 정렬한다.
+  // (폴링과 전송 응답이 겹치면 같은 메시지가 여러 번 들어와 AI쌤이 반복해서 말하는 것처럼 보였다)
+  const mergeMessages = useCallback((incoming: ChatMessage[], replace = false) => {
+    setMessages((prev) => {
+      const map = new Map<string, ChatMessage>()
+      for (const m of replace ? [] : prev) map.set(m.id, m)
+      for (const m of incoming) map.set(m.id, m)
+      return Array.from(map.values()).sort(
+        (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
+      )
+    })
+    // 마지막 조회 시각은 앞으로만 이동시킨다. 뒤로 돌아가면 이미 받은 메시지를 다시 받아온다.
+    for (const m of incoming) {
+      const cur = lastCreatedAtRef.current
+      if (!cur || new Date(m.createdAt).getTime() > new Date(cur).getTime()) {
+        lastCreatedAtRef.current = m.createdAt
+      }
+    }
+  }, [])
+
   const fetchMessages = useCallback(
     async (after: string | null) => {
+      // 이전 폴링이 아직 끝나지 않았으면 겹쳐서 요청하지 않는다.
+      if (pollingRef.current) return
+      pollingRef.current = true
       try {
         const url = after
           ? `/api/group/${roomId}/messages?after=${encodeURIComponent(after)}`
@@ -44,13 +69,14 @@ export default function RoomChat({ roomId, currentUserId }: Props) {
         const incoming: ChatMessage[] = Array.isArray(data?.messages) ? data.messages : []
         if (incoming.length === 0) return
 
-        setMessages((prev) => (after ? [...prev, ...incoming] : incoming))
-        lastCreatedAtRef.current = incoming[incoming.length - 1].createdAt
+        mergeMessages(incoming, !after)
       } catch {
         // polling 실패는 조용히 무시하고 다음 주기에 재시도한다
+      } finally {
+        pollingRef.current = false
       }
     },
-    [roomId],
+    [roomId, mergeMessages],
   )
 
   useEffect(() => {
@@ -107,8 +133,7 @@ export default function RoomChat({ roomId, currentUserId }: Props) {
       setInput('')
       isNearBottomRef.current = true
       if (data?.message) {
-        setMessages((prev) => [...prev, data.message])
-        lastCreatedAtRef.current = data.message.createdAt
+        mergeMessages([data.message])
       }
     } catch {
       setError('네트워크 오류가 발생했어요.')
