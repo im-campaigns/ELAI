@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getCurrentUser } from '@/lib/auth'
 import { getDb, type DbRoomMessage, type DbStudyRoom } from '@/lib/db'
 import { ConfigError } from '@/lib/errors'
-import { maybeReplyToMember, maybeSendWelcome, shouldAiReply } from '@/lib/roomAi'
+import { maybeReplyToMember, shouldAiReply } from '@/lib/roomAi'
 
 const MAX_CONTENT_LENGTH = 500
 const MIN_RESEND_INTERVAL_MS = 2000
@@ -18,7 +18,7 @@ function formatMessage(m: DbRoomMessage) {
   }
 }
 
-async function loadApprovedMembership(roomId: string, userId: string) {
+export async function loadApprovedMembership(roomId: string, userId: string) {
   const db = getDb()
 
   const { data: room, error: roomError } = await db
@@ -87,8 +87,6 @@ export async function GET(req: NextRequest, { params }: { params: { roomId: stri
 
       return NextResponse.json({ messages: ((data ?? []) as DbRoomMessage[]).map(formatMessage) })
     }
-
-    await maybeSendWelcome(room!)
 
     const { data, error: queryError } = await db
       .from('room_messages')
@@ -166,11 +164,14 @@ export async function POST(req: NextRequest, { params }: { params: { roomId: str
       return NextResponse.json({ error: '메시지를 보내지 못했어요.' }, { status: 500 })
     }
 
-    if (shouldAiReply(content)) {
+    // AI쌤 메시지(sender_type='ai_teacher')는 답변 트리거가 될 수 없다. 이 POST는
+    // 항상 sender_type='member'로만 메시지를 저장하므로 아래 조건으로 다시 한 번 보장한다.
+    const insertedMessage = inserted as DbRoomMessage
+    if (insertedMessage.sender_type === 'member' && shouldAiReply(content)) {
       await maybeReplyToMember(room!, { nickname: user.nickname, content })
     }
 
-    return NextResponse.json({ message: formatMessage(inserted as DbRoomMessage) })
+    return NextResponse.json({ message: formatMessage(insertedMessage) })
   } catch (err) {
     if (err instanceof ConfigError) {
       console.error('[group/messages POST] 설정 오류:', err.message)

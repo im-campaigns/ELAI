@@ -44,27 +44,36 @@ function anthropicClient(): Anthropic {
   return new Anthropic()
 }
 
-async function insertAiMessage(roomId: string, content: string): Promise<void> {
+const WELCOME_UNIQUE_VIOLATION_CODE = '23505'
+
+async function insertAiMessage(roomId: string, content: string, kind?: string): Promise<{ error: { code?: string } | null }> {
   const trimmed = content.trim()
-  if (!trimmed) return
+  if (!trimmed) return { error: null }
   const { error } = await getDb().from('room_messages').insert({
     room_id: roomId,
     user_id: null,
     sender_type: 'ai_teacher',
     nickname: AI_TEACHER_NICKNAME,
     content: trimmed,
+    ...(kind ? { kind } : {}),
   })
-  if (error) {
+  if (error && error.code !== WELCOME_UNIQUE_VIOLATION_CODE) {
     console.error('[roomAi] AI쌤 메시지 저장 실패:', error)
   }
+  return { error }
 }
 
 /**
- * 방에 메시지가 하나도 없을 때(첫 승인 회원 입장) AI쌤의 환영 인사 + 오늘의 질문을 올린다.
- * 동시 요청에 의한 중복 생성을 막기 위해, 호출 직전에 다시 한 번 메시지 존재 여부를 확인한다.
+ * 방에 입장할 때 한 번만 호출되는 전용 처리. AI쌤의 환영 인사 + 오늘의 질문을 올린다.
+ * 환영 인사는 kind='welcome'으로 저장되고, room_messages에는 방당 kind='welcome' 행이
+ * 하나만 존재하도록 DB 유니크 인덱스가 걸려 있다. 동시에 여러 요청이 들어와도
+ * 실제로 저장되는 건 가장 먼저 insert에 성공한 요청 하나뿐이고, 나머지는 유니크 제약
+ * 위반 에러를 받아 조용히 무시한다 (check-then-insert 방식의 race condition을 DB가 막아준다).
  */
 export async function maybeSendWelcome(room: RoomContext): Promise<void> {
   const db = getDb()
+  // 환영 인사는 방에 메시지가 하나도 없을 때(첫 승인 회원 입장)에만 보낸다.
+  // 이미 대화가 쌓인 방이라면 kind='welcome' 행이 없더라도 새로 환영 인사를 만들지 않는다.
   const { count, error } = await db
     .from('room_messages')
     .select('id', { count: 'exact', head: true })
@@ -101,19 +110,7 @@ export async function maybeSendWelcome(room: RoomContext): Promise<void> {
       .map((block) => block.text)
       .join('')
 
-    // 대기 중 다른 요청이 먼저 메시지를 만들었을 수 있으니 한 번 더 확인한다.
-    const { count: recheckCount, error: recheckError } = await db
-      .from('room_messages')
-      .select('id', { count: 'exact', head: true })
-      .eq('room_id', room.id)
-
-    if (recheckError) {
-      console.error('[roomAi] 환영 메시지 재확인 실패:', recheckError)
-      return
-    }
-    if ((recheckCount ?? 0) > 0) return
-
-    await insertAiMessage(room.id, text)
+    await insertAiMessage(room.id, text, 'welcome')
   } catch (err) {
     console.error('[roomAi] 환영 메시지 생성 실패:', err)
   }
@@ -161,11 +158,31 @@ async function hasRecentNotice(roomId: string): Promise<boolean> {
   return data?.[0]?.content === RATE_LIMIT_NOTICE
 }
 
+async function isMostRecentMessageFromAiTeacher(roomId: string): Promise<boolean> {
+  const { data, error } = await getDb()
+    .from('room_messages')
+    .select('sender_type')
+    .eq('room_id', roomId)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle()
+
+  if (error) {
+    console.error('[roomAi] 최근 메시지 발신자 조회 실패:', error)
+    return false
+  }
+  return data?.sender_type === 'ai_teacher'
+}
+
 /** 회원이 올린 트리거 메시지에 AI쌤이 답한다. 비용 보호를 위해 분당 응답 횟수를 제한한다. */
 export async function maybeReplyToMember(
   room: RoomContext,
   trigger: { nickname: string; content: string },
 ): Promise<void> {
+  // 연속 발언 방지: 가장 최근 메시지가 이미 AI쌤이면(동시 요청 등으로 먼저 답했다면)
+  // 새 회원 메시지가 올라오기 전까지는 AI쌤이 또 말하지 않는다.
+  if (await isMostRecentMessageFromAiTeacher(room.id)) return
+
   const recentAiCount = await countRecentAiMessages(room.id)
   if (recentAiCount >= RATE_LIMIT_MAX_PER_MINUTE) {
     const alreadyNotified = await hasRecentNotice(room.id)

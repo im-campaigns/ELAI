@@ -54,6 +54,11 @@ export default function RoomChat({ roomId, currentUserId }: Props) {
   )
 
   useEffect(() => {
+    // 방 입장 시 한 번만 호출: AI쌤 환영 인사 생성을 /messages 폴링과 분리한다.
+    fetch(`/api/group/${roomId}/welcome`, { method: 'POST' }).catch(() => {})
+  }, [roomId])
+
+  useEffect(() => {
     fetchMessages(null).finally(() => setLoaded(true))
   }, [fetchMessages])
 
