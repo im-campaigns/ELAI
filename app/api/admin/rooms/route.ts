@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getDb, type AiInterest, type AiLevel, type DbRoomMember, type DbStudyRoom } from '@/lib/db'
 import { isAdminSession } from '@/lib/auth'
 import { ConfigError } from '@/lib/errors'
+import { generateAiStudentsForRoom } from '@/lib/aiStudents'
 
 const LEVELS: AiLevel[] = ['beginner', 'intermediate', 'advanced']
 const INTERESTS: AiInterest[] = ['업무활용', '공부', '창작', '기타']
@@ -117,14 +118,19 @@ export async function POST(req: NextRequest) {
   }
 
   try {
-    const { error } = await getDb()
+    const db = getDb()
+    const { data: inserted, error } = await db
       .from('study_rooms')
       .insert({ name, description, level, interest, max_members: maxMembers })
+      .select('id')
+      .single()
 
-    if (error) {
+    if (error || !inserted) {
       console.error('[admin/rooms POST] insert failed:', error)
       return NextResponse.json({ error: '방 생성에 실패했어요.' }, { status: 500 })
     }
+
+    await generateAiStudentsForRoom(db, (inserted as { id: string }).id, level as AiLevel, interest as AiInterest)
 
     return NextResponse.json({ ok: true })
   } catch (err) {

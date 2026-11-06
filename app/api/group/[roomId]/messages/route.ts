@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getCurrentUser } from '@/lib/auth'
 import { getDb, type DbRoomMessage, type DbStudyRoom } from '@/lib/db'
 import { ConfigError } from '@/lib/errors'
-import { maybeReplyToMember, shouldAiReply } from '@/lib/roomAi'
+import { maybeReplyToMember, maybeTriggerAiStudent, shouldAiReply } from '@/lib/roomAi'
 
 const MAX_CONTENT_LENGTH = 500
 const MIN_RESEND_INTERVAL_MS = 2000
@@ -15,6 +15,7 @@ function formatMessage(m: DbRoomMessage) {
     nickname: m.nickname,
     content: m.content,
     createdAt: m.created_at,
+    visibleAt: m.visible_at,
   }
 }
 
@@ -65,6 +66,7 @@ export async function GET(req: NextRequest, { params }: { params: { roomId: stri
 
     const after = req.nextUrl.searchParams.get('after')
     const db = getDb()
+    const nowIso = new Date().toISOString()
 
     if (after) {
       const afterDate = new Date(after)
@@ -74,10 +76,11 @@ export async function GET(req: NextRequest, { params }: { params: { roomId: stri
 
       const { data, error: queryError } = await db
         .from('room_messages')
-        .select('id, room_id, user_id, sender_type, nickname, content, created_at')
+        .select('id, room_id, user_id, sender_type, nickname, content, created_at, visible_at')
         .eq('room_id', room!.id)
-        .gt('created_at', afterDate.toISOString())
-        .order('created_at', { ascending: true })
+        .gt('visible_at', afterDate.toISOString())
+        .lte('visible_at', nowIso)
+        .order('visible_at', { ascending: true })
         .limit(50)
 
       if (queryError) {
@@ -90,9 +93,10 @@ export async function GET(req: NextRequest, { params }: { params: { roomId: stri
 
     const { data, error: queryError } = await db
       .from('room_messages')
-      .select('id, room_id, user_id, sender_type, nickname, content, created_at')
+      .select('id, room_id, user_id, sender_type, nickname, content, created_at, visible_at')
       .eq('room_id', room!.id)
-      .order('created_at', { ascending: false })
+      .lte('visible_at', nowIso)
+      .order('visible_at', { ascending: false })
       .limit(50)
 
     if (queryError) {
@@ -156,7 +160,7 @@ export async function POST(req: NextRequest, { params }: { params: { roomId: str
     const { data: inserted, error: insertError } = await db
       .from('room_messages')
       .insert({ room_id: room!.id, user_id: user.id, sender_type: 'member', nickname: user.nickname, content })
-      .select('id, room_id, user_id, sender_type, nickname, content, created_at')
+      .select('id, room_id, user_id, sender_type, nickname, content, created_at, visible_at')
       .single()
 
     if (insertError || !inserted) {
@@ -166,9 +170,15 @@ export async function POST(req: NextRequest, { params }: { params: { roomId: str
 
     // AI쌤 메시지(sender_type='ai_teacher')는 답변 트리거가 될 수 없다. 이 POST는
     // 항상 sender_type='member'로만 메시지를 저장하므로 아래 조건으로 다시 한 번 보장한다.
+    // AI쌤이 답할 질문이면 같은 메시지에 AI 학생이 끼지 않아, 회원 메시지 1개당
+    // AI 응답(AI쌤 또는 AI 학생 중 하나)이 최대 1개로 자연스럽게 유지된다.
     const insertedMessage = inserted as DbRoomMessage
-    if (insertedMessage.sender_type === 'member' && shouldAiReply(content)) {
-      await maybeReplyToMember(room!, { nickname: user.nickname, content })
+    if (insertedMessage.sender_type === 'member') {
+      if (shouldAiReply(content)) {
+        await maybeReplyToMember(room!, { nickname: user.nickname, content })
+      } else {
+        await maybeTriggerAiStudent(room!, { id: insertedMessage.id, nickname: user.nickname, content })
+      }
     }
 
     return NextResponse.json({ message: formatMessage(insertedMessage) })

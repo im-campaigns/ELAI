@@ -1,6 +1,6 @@
 import { isAdminSession } from '@/lib/auth'
 import { getDb } from '@/lib/db'
-import type { AiInterest, AiLevel, DbRoomMember, DbStudyRoom } from '@/lib/db'
+import type { AiInterest, AiLevel, DbAiStudent, DbRoomMember, DbStudyRoom } from '@/lib/db'
 import { getOrderedSubtopicIds } from '@/lib/curriculum'
 import AdminLoginForm from '@/components/AdminLoginForm'
 import AdminUserTable from '@/components/AdminUserTable'
@@ -55,12 +55,13 @@ type MemberWithUser = Pick<DbRoomMember, 'room_id' | 'user_id' | 'status' | 'req
 
 async function loadRoomsAdmin() {
   const db = getDb()
-  const [{ data: rooms }, { data: members }] = await Promise.all([
+  const [{ data: rooms }, { data: members }, { data: aiStudents }] = await Promise.all([
     db.from('study_rooms').select('*').order('created_at', { ascending: true }),
     db
       .from('room_members')
       .select('room_id, user_id, status, requested_at, users(nickname, job, ai_level, ai_interest)')
       .order('requested_at', { ascending: true }),
+    db.from('ai_students').select('*').order('created_at', { ascending: true }),
   ])
 
   const roomList = (rooms ?? []) as DbStudyRoom[]
@@ -88,6 +89,18 @@ async function loadRoomsAdmin() {
     }
   }
 
+  const aiStudentsByRoom = new Map<string, AdminRoomOverview['aiStudents']>()
+  for (const s of (aiStudents ?? []) as DbAiStudent[]) {
+    const list = aiStudentsByRoom.get(s.room_id) ?? []
+    list.push({
+      id: s.id,
+      nickname: s.nickname,
+      persona: s.persona,
+      isActive: s.is_active,
+    })
+    aiStudentsByRoom.set(s.room_id, list)
+  }
+
   const roomsResult: AdminRoomOverview[] = roomList.map((room) => ({
     id: room.id,
     name: room.name,
@@ -97,6 +110,7 @@ async function loadRoomsAdmin() {
     maxMembers: room.max_members,
     approvedCount: approvedCountByRoom.get(room.id) ?? 0,
     pendingCount: pendingCountByRoom.get(room.id) ?? 0,
+    aiStudents: aiStudentsByRoom.get(room.id) ?? [],
   }))
 
   return { rooms: roomsResult, pending }

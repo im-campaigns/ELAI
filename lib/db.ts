@@ -75,14 +75,42 @@ export type DbRoomMember = {
   decided_at: string | null
 }
 
-export type RoomMessageSenderType = 'member' | 'ai_teacher'
+export type RoomMessageSenderType = 'member' | 'ai_teacher' | 'ai_student'
 
 export type DbRoomMessage = {
   id: string
   room_id: string
   user_id: string | null
+  ai_student_id: string | null
   sender_type: RoomMessageSenderType
   nickname: string
   content: string
+  created_at: string
+  visible_at: string
+  triggered_by: string | null
+}
+
+export type AiStudentRole = '질문형' | '공감형' | '조용형' | '엉뚱형'
+
+export type AiStudentPersona = {
+  ageGroup: string
+  job: string
+  motivation: string
+  aiLevel: '입문' | '중급' | '고급'
+  personality: string
+  role: AiStudentRole
+  speechStyle: string
+  /** 회원 메시지 하나당 이 학생이 반응을 "시도"할 기본 확률 (0~1) */
+  replyChance: number
+  /** 생성된 답변에 가벼운 오타를 섞을 확률 (0~1), 현재는 프롬프트 힌트로만 사용 */
+  typoChance: number
+}
+
+export type DbAiStudent = {
+  id: string
+  room_id: string
+  nickname: string
+  persona: AiStudentPersona
+  is_active: boolean
   created_at: string
 }

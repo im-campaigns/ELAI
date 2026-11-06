@@ -3,6 +3,19 @@
 import { useRouter } from 'next/navigation'
 import { useState } from 'react'
 
+export type AdminAiStudent = {
+  id: string
+  nickname: string
+  persona: {
+    ageGroup: string
+    job: string
+    motivation: string
+    aiLevel: string
+    role: string
+  }
+  isActive: boolean
+}
+
 export type AdminRoomOverview = {
   id: string
   name: string
@@ -12,6 +25,7 @@ export type AdminRoomOverview = {
   maxMembers: number
   approvedCount: number
   pendingCount: number
+  aiStudents: AdminAiStudent[]
 }
 
 export type AdminPendingApplication = {
@@ -38,7 +52,7 @@ const levelLabel: Record<string, string> = {
 
 type RoomMessage = {
   id: string
-  senderType: 'member' | 'ai_teacher'
+  senderType: 'member' | 'ai_teacher' | 'ai_student'
   nickname: string
   content: string
   createdAt: string
@@ -52,6 +66,31 @@ export default function AdminRoomPanel({ rooms, pending }: Props) {
   const [viewingRoom, setViewingRoom] = useState<{ id: string; name: string } | null>(null)
   const [roomMessages, setRoomMessages] = useState<RoomMessage[]>([])
   const [messagesLoading, setMessagesLoading] = useState(false)
+
+  const [managingRoomId, setManagingRoomId] = useState<string | null>(null)
+  const managingRoom = rooms.find((r) => r.id === managingRoomId) ?? null
+  const [togglingStudentId, setTogglingStudentId] = useState<string | null>(null)
+
+  const toggleAiStudent = async (studentId: string, nextActive: boolean) => {
+    setTogglingStudentId(studentId)
+    try {
+      const res = await fetch(`/api/admin/ai-students/${studentId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ isActive: nextActive }),
+      })
+      if (!res.ok) {
+        const data = await res.json().catch(() => null)
+        setMessage({ type: 'error', text: data?.error ?? 'AI 학생 설정 변경에 실패했어요.' })
+        return
+      }
+      router.refresh()
+    } catch {
+      setMessage({ type: 'error', text: '네트워크 오류가 발생했어요.' })
+    } finally {
+      setTogglingStudentId(null)
+    }
+  }
 
   const openRoomMessages = async (room: { id: string; name: string }) => {
     setViewingRoom(room)
@@ -209,6 +248,7 @@ export default function AdminRoomPanel({ rooms, pending }: Props) {
                 <th className="px-5 py-3 font-semibold">수준 / 관심분야</th>
                 <th className="px-5 py-3 font-semibold">승인 인원 / 정원</th>
                 <th className="px-5 py-3 font-semibold">대기 인원</th>
+                <th className="px-5 py-3 font-semibold">AI 학생</th>
                 <th className="px-5 py-3 font-semibold">대화</th>
               </tr>
             </thead>
@@ -225,6 +265,14 @@ export default function AdminRoomPanel({ rooms, pending }: Props) {
                   <td className="px-5 py-3 text-slate-600">{r.pendingCount}</td>
                   <td className="px-5 py-3">
                     <button
+                      onClick={() => setManagingRoomId(r.id)}
+                      className="text-xs font-medium text-slate-600 hover:text-slate-800 border border-slate-200 rounded-lg px-3 py-1.5 transition-colors"
+                    >
+                      {r.aiStudents.length}명 관리
+                    </button>
+                  </td>
+                  <td className="px-5 py-3">
+                    <button
                       onClick={() => openRoomMessages({ id: r.id, name: r.name })}
                       className="text-xs font-medium text-primary-600 hover:text-primary-700 border border-primary-200 rounded-lg px-3 py-1.5 transition-colors"
                     >
@@ -235,7 +283,7 @@ export default function AdminRoomPanel({ rooms, pending }: Props) {
               ))}
               {rooms.length === 0 && (
                 <tr>
-                  <td colSpan={5} className="px-5 py-10 text-center text-slate-400">
+                  <td colSpan={6} className="px-5 py-10 text-center text-slate-400">
                     아직 개설된 방이 없어요.
                   </td>
                 </tr>
@@ -346,6 +394,13 @@ export default function AdminRoomPanel({ rooms, pending }: Props) {
                         <span className="text-[10px] font-bold text-white bg-primary-600 rounded-full px-2 py-0.5">
                           🤖 AI쌤
                         </span>
+                      ) : m.senderType === 'ai_student' ? (
+                        <>
+                          <span className="font-medium text-slate-600">{m.nickname}</span>
+                          <span className="text-[10px] text-slate-400 border border-slate-200 rounded-full px-1.5">
+                            가상 학생
+                          </span>
+                        </>
                       ) : (
                         <span className="font-medium text-slate-600">{m.nickname}</span>
                       )}
@@ -356,6 +411,57 @@ export default function AdminRoomPanel({ rooms, pending }: Props) {
                     <p className="text-slate-700 whitespace-pre-wrap">{m.content}</p>
                   </div>
                 ))}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {managingRoom && (
+        <div
+          className="fixed inset-0 bg-slate-900/40 flex items-center justify-center p-4 z-50"
+          onClick={() => setManagingRoomId(null)}
+        >
+          <div
+            className="bg-white rounded-2xl w-full max-w-lg max-h-[80vh] flex flex-col overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
+              <h3 className="font-bold text-slate-800">{managingRoom.name} · AI 학생</h3>
+              <button
+                onClick={() => setManagingRoomId(null)}
+                className="text-slate-400 hover:text-slate-600 text-sm"
+              >
+                닫기
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto px-5 py-4 space-y-3">
+              {managingRoom.aiStudents.length === 0 && (
+                <p className="text-center text-sm text-slate-400 py-10">등록된 AI 학생이 없어요.</p>
+              )}
+              {managingRoom.aiStudents.map((s) => (
+                <div
+                  key={s.id}
+                  className="flex items-center justify-between gap-3 border border-slate-100 rounded-xl px-4 py-3"
+                >
+                  <div>
+                    <p className="text-sm font-medium text-slate-700">{s.nickname}</p>
+                    <p className="text-xs text-slate-400 mt-0.5">
+                      {s.persona.ageGroup} · {s.persona.job} · {s.persona.motivation}
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => toggleAiStudent(s.id, !s.isActive)}
+                    disabled={togglingStudentId === s.id}
+                    className={`text-xs font-medium rounded-lg px-3 py-1.5 transition-colors flex-shrink-0 disabled:opacity-50 ${
+                      s.isActive
+                        ? 'bg-primary-600 text-white hover:bg-primary-700'
+                        : 'border border-slate-200 text-slate-500 hover:text-slate-700'
+                    }`}
+                  >
+                    {s.isActive ? '켜짐' : '꺼짐'}
+                  </button>
+                </div>
+              ))}
             </div>
           </div>
         </div>

@@ -2,6 +2,7 @@ import Link from 'next/link'
 import { getCurrentUser } from '@/lib/auth'
 import { getDb, type DbStudyRoom } from '@/lib/db'
 import RoomChat from '@/components/RoomChat'
+import GroupAiNotice from '@/components/GroupAiNotice'
 
 export const metadata = {
   title: '그룹과외 방 | ELAI',
@@ -74,6 +75,9 @@ export default async function GroupRoomPage({ params }: { params: { roomId: stri
           <h1 className="text-lg font-bold text-slate-800">{typedRoom.name}</h1>
           <p className="text-sm text-slate-500 mt-0.5">{typedRoom.description}</p>
           <p className="text-xs text-slate-400 mt-1">승인된 회원 {approvedCount ?? 0}명</p>
+          <div className="mt-3">
+            <GroupAiNotice />
+          </div>
         </div>
       </div>
       <div className="flex-1 overflow-hidden">

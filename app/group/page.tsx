@@ -2,6 +2,7 @@ import Link from 'next/link'
 import { getCurrentUser } from '@/lib/auth'
 import { getDb, type DbRoomMember, type DbStudyRoom } from '@/lib/db'
 import GroupRoomList, { type GroupRoom } from '@/components/GroupRoomList'
+import GroupAiNotice from '@/components/GroupAiNotice'
 
 export const metadata = {
   title: '그룹과외 | ELAI',
@@ -66,6 +67,9 @@ export default async function GroupPage() {
         <div className="mb-8">
           <h1 className="text-2xl font-bold text-slate-800">그룹과외</h1>
           <p className="text-slate-500 text-sm mt-1">같은 관심분야의 회원들과 함께 AI쌤과 공부해요.</p>
+        </div>
+        <div className="mb-6">
+          <GroupAiNotice />
         </div>
         <GroupRoomList rooms={roomList} />
       </div>

@@ -5,10 +5,11 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 type ChatMessage = {
   id: string
   userId: string | null
-  senderType: 'member' | 'ai_teacher'
+  senderType: 'member' | 'ai_teacher' | 'ai_student'
   nickname: string
   content: string
   createdAt: string
+  visibleAt: string
 }
 
 type Props = {
@@ -29,12 +30,12 @@ export default function RoomChat({ roomId, currentUserId }: Props) {
 
   const listRef = useRef<HTMLDivElement>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
-  const lastCreatedAtRef = useRef<string | null>(null)
+  const lastVisibleAtRef = useRef<string | null>(null)
   const isNearBottomRef = useRef(true)
 
   const pollingRef = useRef(false)
 
-  // 같은 메시지가 화면에 두 번 붙지 않도록 id 기준으로 합치고 시간순으로 정렬한다.
+  // 같은 메시지가 화면에 두 번 붙지 않도록 id 기준으로 합치고 visible_at(표시 시각) 순으로 정렬한다.
   // (폴링과 전송 응답이 겹치면 같은 메시지가 여러 번 들어와 AI쌤이 반복해서 말하는 것처럼 보였다)
   const mergeMessages = useCallback((incoming: ChatMessage[], replace = false) => {
     setMessages((prev) => {
@@ -42,14 +43,14 @@ export default function RoomChat({ roomId, currentUserId }: Props) {
       for (const m of replace ? [] : prev) map.set(m.id, m)
       for (const m of incoming) map.set(m.id, m)
       return Array.from(map.values()).sort(
-        (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
+        (a, b) => new Date(a.visibleAt).getTime() - new Date(b.visibleAt).getTime(),
       )
     })
     // 마지막 조회 시각은 앞으로만 이동시킨다. 뒤로 돌아가면 이미 받은 메시지를 다시 받아온다.
     for (const m of incoming) {
-      const cur = lastCreatedAtRef.current
-      if (!cur || new Date(m.createdAt).getTime() > new Date(cur).getTime()) {
-        lastCreatedAtRef.current = m.createdAt
+      const cur = lastVisibleAtRef.current
+      if (!cur || new Date(m.visibleAt).getTime() > new Date(cur).getTime()) {
+        lastVisibleAtRef.current = m.visibleAt
       }
     }
   }, [])
@@ -91,7 +92,7 @@ export default function RoomChat({ roomId, currentUserId }: Props) {
   useEffect(() => {
     const interval = setInterval(() => {
       if (document.hidden) return
-      fetchMessages(lastCreatedAtRef.current)
+      fetchMessages(lastVisibleAtRef.current)
     }, POLL_INTERVAL_MS)
     return () => clearInterval(interval)
   }, [fetchMessages])
