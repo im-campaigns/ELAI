@@ -1,12 +1,33 @@
 import Anthropic from '@anthropic-ai/sdk'
-import { getDb, type AiInterest, type AiLevel, type AiStudentPersona, type DbAiStudent, type DbRoomMessage } from '@/lib/db'
+import {
+  getDb,
+  type AiInterest,
+  type AiLevel,
+  type AiStudentPersona,
+  type AiUsagePurpose,
+  type DbAiStudent,
+  type DbRoomMessage,
+} from '@/lib/db'
 
 export const AI_TEACHER_NICKNAME = 'AI쌤'
-const RATE_LIMIT_WINDOW_MS = 60 * 1000
-const RATE_LIMIT_MAX_PER_MINUTE = 5
-const RATE_LIMIT_NOTICE = '지금 질문이 많이 몰려서, 잠시 뒤에 다시 물어봐 주세요 🙏'
+export const AI_TEACHER_LIMIT_MESSAGE = '잠시 후 다시 질문해 주세요. 질문이 너무 잦으면 AI쌤이 잠깐 쉬어가요 🙏'
+
+// 회원 질문에 대한 AI쌤의 본 답변만 기존 모델을 유지하고, 그 외(환영 인사/AI 학생/보정/요약)는
+// 비용이 저렴한 모델을 쓴다.
+const MAIN_MODEL = 'claude-opus-4-8'
+const CHEAP_MODEL = 'claude-haiku-4-5-20251001'
+
 const FALLBACK_REPLY = '지금은 답하기 어려워요. 잠시 후 다시 물어봐 주세요.'
-const RECENT_CONTEXT_LIMIT = 20
+// Claude에 보내는 "최근 대화" 원문은 최근 10개까지만. 그보다 오래된 내용은 요약으로 대체한다.
+const RECENT_CONTEXT_LIMIT = 10
+// 요약 이후 메시지가 이만큼 더 쌓이면 요약을 다시 만든다.
+const SUMMARY_REFRESH_THRESHOLD = 30
+
+// 사용자별 AI쌤 호출 한도(남용 방지 + 비용 보호). 넘으면 Claude를 호출하지 않고 바로 안내한다.
+const AI_TEACHER_PER_USER_MINUTE_LIMIT = 3
+const AI_TEACHER_PER_USER_MINUTE_WINDOW_MS = 60 * 1000
+const AI_TEACHER_PER_USER_DAILY_LIMIT = 30
+const AI_TEACHER_PER_USER_DAILY_WINDOW_MS = 24 * 60 * 60 * 1000
 
 // AI 학생 비용 보호: 방마다 10분당 최대 5개 메시지만 생성한다.
 const AI_STUDENT_RATE_LIMIT_WINDOW_MS = 10 * 60 * 1000
@@ -41,6 +62,11 @@ const SHARED_SAFETY_RULES = `- 회원에게 전화번호, 주소, 실명, 직장
 - 연애, 정치, 종교, 금전 이야기로 대화를 끌고 가지 않습니다
 - 다른 회원의 직업, 수준 등 개인 프로필 정보를 대화 중 절대 언급하지 않습니다`
 
+// 방의 "관심 분야"가 악기 기타(guitar) 등으로 오해되지 않도록 뜻을 명확히 알려주는 설명.
+// 두 역할의 시스템 프롬프트에 모두 포함한다.
+const INTEREST_EXPLANATION = `- '관심 분야'는 방이 다루는 주제 범주를 뜻합니다: 업무활용(회사/업무에 AI 활용), 공부(AI 자체를 배우기), 창작(글·이미지 등 창작에 AI 활용), 자유주제(특정 분야에 안 묶인 다양한 질문). 악기 "기타(guitar)"와는 전혀 관련이 없으니 혼동하지 않습니다
+- 같은 비유, 표현, 예시를 대화에서 반복해서 쓰지 않습니다. 매번 다른 표현으로 설명합니다`
+
 function basePersonaPrompt(room: RoomContext): string {
   return `당신은 ELAI(Easy Learning AI)의 그룹과외 방 진행자 "AI쌤"입니다.
 
@@ -55,6 +81,7 @@ function basePersonaPrompt(room: RoomContext): string {
 - 답변은 3~5문장 이내로 짧게 합니다
 - 이 방의 수준(${levelLabel[room.level]})에 맞춰 초보자도 이해할 수 있게 설명합니다
 - 방의 관심 분야(${room.interest})와 연결된 예시를 가능하면 사용합니다
+${INTEREST_EXPLANATION}
 
 안전 규칙:
 ${SHARED_SAFETY_RULES}`
@@ -80,6 +107,8 @@ function studentPersonaPrompt(room: RoomContext, persona: AiStudentPersona): str
 - 당신의 말투와 성격을 꾸준히 유지합니다
 - AI쌤의 진행(인사, 질문, 정리)을 방해하거나 끊지 않습니다
 - 가끔(자주는 아니고 드물게) 당신의 AI 이해 수준에 맞게 AI 개념을 살짝 오해한 듯한 말을 해도 괜찮습니다. 단, 아래 안전 규칙은 절대 어기지 않습니다
+- 당신 자신의 반응만 말합니다. 다른 참여자(AI쌤이나 다른 회원)를 대신해서 말하거나, 당신 자신에게 인사하거나 답하지 않습니다
+${INTEREST_EXPLANATION}
 
 안전 규칙:
 ${SHARED_SAFETY_RULES}
@@ -90,6 +119,17 @@ ${SHARED_SAFETY_RULES}
 
 function anthropicClient(): Anthropic {
   return new Anthropic()
+}
+
+/** 방 정보는 거의 고정값이라 캐시 적중률이 높다. 프롬프트 캐싱으로 반복 호출 비용을 줄인다. */
+function cachedSystem(text: string): Anthropic.Messages.TextBlockParam[] {
+  return [{ type: 'text', text, cache_control: { type: 'ephemeral' } }]
+}
+
+/** 이전 대화 요약(있으면)과 최근 원문 대화를 하나의 사용자 메시지로 합친다. */
+function buildContextualPrompt(summaryText: string | null, recentTranscript: string, instruction: string): string {
+  const summaryBlock = summaryText ? `이전 대화 요약: ${summaryText}\n\n` : ''
+  return `${summaryBlock}최근 대화:\n${recentTranscript}\n\n${instruction}`
 }
 
 const UNIQUE_VIOLATION_CODE = '23505'
@@ -112,22 +152,44 @@ function extractText(response: Anthropic.Message): string {
     .join('')
 }
 
+/** 토큰 사용량을 ai_usage_log에 적재한다. 실패해도 채팅 흐름을 막지 않는 fire-and-forget. */
+function logUsage(params: {
+  roomId: string
+  purpose: AiUsagePurpose
+  model: string
+  usage?: { input_tokens: number; output_tokens: number }
+}): void {
+  if (!params.usage) return
+  getDb()
+    .from('ai_usage_log')
+    .insert({
+      room_id: params.roomId,
+      purpose: params.purpose,
+      model: params.model,
+      input_tokens: params.usage.input_tokens,
+      output_tokens: params.usage.output_tokens,
+    })
+    .then(({ error }: { error: { message: string } | null }) => {
+      if (error) console.error('[roomAi] 토큰 사용량 기록 실패:', error)
+    })
+}
+
 async function insertAiMessage(
   roomId: string,
   content: string,
-  kind?: string,
-  visibleAt?: string,
+  options: { kind?: string; visibleAt?: string; triggeredBy?: string; userId?: string } = {},
 ): Promise<{ error: { code?: string } | null }> {
   const trimmed = content.trim()
   if (!trimmed) return { error: null }
   const { error } = await getDb().from('room_messages').insert({
     room_id: roomId,
-    user_id: null,
+    user_id: options.userId ?? null,
     sender_type: 'ai_teacher',
     nickname: AI_TEACHER_NICKNAME,
     content: trimmed,
-    ...(kind ? { kind } : {}),
-    ...(visibleAt ? { visible_at: visibleAt } : {}),
+    ...(options.kind ? { kind: options.kind } : {}),
+    ...(options.visibleAt ? { visible_at: options.visibleAt } : {}),
+    ...(options.triggeredBy ? { triggered_by: options.triggeredBy } : {}),
   })
   if (error && error.code !== UNIQUE_VIOLATION_CODE) {
     console.error('[roomAi] AI쌤 메시지 저장 실패:', error)
@@ -163,6 +225,112 @@ async function insertAiStudentMessage(params: {
 }
 
 /**
+ * 방의 대화 요약을 조회하고, 필요하면(원문으로 보내는 최근 메시지 범위를 벗어난 구간이
+ * SUMMARY_REFRESH_THRESHOLD개 이상 쌓였으면) Haiku로 새로 갱신한다.
+ * 요약 대상은 "최근 RECENT_CONTEXT_LIMIT개를 제외한" 더 오래된 구간이다.
+ */
+async function getOrRefreshSummary(roomId: string, totalMessageCount: number): Promise<string | null> {
+  const db = getDb()
+  const { data: existing, error } = await db
+    .from('room_conversation_summaries')
+    .select('summary, message_count_at_summary')
+    .eq('room_id', roomId)
+    .maybeSingle()
+
+  if (error) {
+    console.error('[roomAi] 대화 요약 조회 실패:', error)
+    return null
+  }
+
+  const checkpoint = existing?.message_count_at_summary ?? 0
+  const currentSummary = existing?.summary || null
+
+  const summarizableCount = totalMessageCount - RECENT_CONTEXT_LIMIT
+  if (summarizableCount - checkpoint < SUMMARY_REFRESH_THRESHOLD) {
+    return currentSummary
+  }
+  if (!process.env.ANTHROPIC_API_KEY) return currentSummary
+
+  const { data: deltaRows, error: deltaError } = await db
+    .from('room_messages')
+    .select('nickname, sender_type, content')
+    .eq('room_id', roomId)
+    .order('created_at', { ascending: true })
+    .range(checkpoint, summarizableCount - 1)
+
+  if (deltaError || !deltaRows || deltaRows.length === 0) {
+    if (deltaError) console.error('[roomAi] 요약 대상 조회 실패:', deltaError)
+    return currentSummary
+  }
+
+  const deltaTranscript = (deltaRows as Pick<DbRoomMessage, 'nickname' | 'sender_type' | 'content'>[])
+    .map((m) => `${m.nickname}: ${m.content}`)
+    .join('\n')
+
+  try {
+    const client = anthropicClient()
+    const response = await client.messages.create({
+      model: CHEAP_MODEL,
+      max_tokens: 300,
+      system:
+        '당신은 대화 요약 도우미입니다. 아래 그룹과외 방 대화를 한국어 3~5문장으로 간결하게 요약하세요. 누가 무엇을 물었고 AI쌤이 어떻게 답했는지 핵심만 남깁니다.',
+      messages: [
+        {
+          role: 'user',
+          content: currentSummary
+            ? `이전 요약:\n${currentSummary}\n\n이어지는 새 대화:\n${deltaTranscript}\n\n위 이전 요약과 새 대화를 합쳐 3~5문장으로 업데이트된 요약을 만들어주세요.`
+            : `다음 대화를 3~5문장으로 요약해주세요.\n\n${deltaTranscript}`,
+        },
+      ],
+    })
+
+    const newSummary = extractText(response).trim()
+    logUsage({ roomId, purpose: 'summary', model: CHEAP_MODEL, usage: response.usage })
+    if (!newSummary) return currentSummary
+
+    const { error: upsertError } = await db.from('room_conversation_summaries').upsert({
+      room_id: roomId,
+      summary: newSummary,
+      message_count_at_summary: summarizableCount,
+      updated_at: new Date().toISOString(),
+    })
+    if (upsertError) console.error('[roomAi] 대화 요약 저장 실패:', upsertError)
+
+    return newSummary
+  } catch (err) {
+    console.error('[roomAi] 대화 요약 생성 실패:', err)
+    return currentSummary
+  }
+}
+
+/** AI쌤/AI 학생 호출에 공통으로 쓰는 맥락(요약 + 최근 원문 10개)을 가져온다. */
+async function getConversationContext(roomId: string): Promise<{ summaryText: string | null; recentTranscript: string }> {
+  const db = getDb()
+
+  const [{ count: totalCount }, { data: recentRows, error: recentError }] = await Promise.all([
+    db.from('room_messages').select('id', { count: 'exact', head: true }).eq('room_id', roomId),
+    db
+      .from('room_messages')
+      .select('nickname, sender_type, content')
+      .eq('room_id', roomId)
+      .order('created_at', { ascending: false })
+      .limit(RECENT_CONTEXT_LIMIT),
+  ])
+
+  if (recentError) {
+    console.error('[roomAi] 최근 대화 조회 실패:', recentError)
+  }
+
+  const recentHistory = ((recentRows ?? []) as Pick<DbRoomMessage, 'nickname' | 'sender_type' | 'content'>[])
+    .slice()
+    .reverse()
+  const recentTranscript = recentHistory.map((m) => `${m.nickname}: ${m.content}`).join('\n')
+
+  const summaryText = await getOrRefreshSummary(roomId, totalCount ?? 0)
+  return { summaryText, recentTranscript }
+}
+
+/**
  * 방에 입장할 때 한 번만 호출되는 전용 처리. AI쌤의 환영 인사 + 오늘의 질문을 올린다.
  * 환영 인사는 kind='welcome'으로 저장되고, room_messages에는 방당 kind='welcome' 행이
  * 하나만 존재하도록 DB 유니크 인덱스가 걸려 있다. 동시에 여러 요청이 들어와도
@@ -192,9 +360,9 @@ export async function maybeSendWelcome(room: RoomContext): Promise<void> {
   try {
     const client = anthropicClient()
     const response = await client.messages.create({
-      model: 'claude-opus-4-8',
+      model: CHEAP_MODEL,
       max_tokens: 400,
-      system: basePersonaPrompt(room),
+      system: cachedSystem(basePersonaPrompt(room)),
       messages: [
         {
           role: 'user',
@@ -204,12 +372,9 @@ export async function maybeSendWelcome(room: RoomContext): Promise<void> {
       ],
     })
 
-    const text = response.content
-      .filter((block): block is Anthropic.TextBlock => block.type === 'text')
-      .map((block) => block.text)
-      .join('')
-
-    await insertAiMessage(room.id, text, 'welcome')
+    const text = extractText(response)
+    logUsage({ roomId: room.id, purpose: 'welcome', model: CHEAP_MODEL, usage: response.usage })
+    await insertAiMessage(room.id, text, { kind: 'welcome' })
   } catch (err) {
     console.error('[roomAi] 환영 메시지 생성 실패:', err)
   }
@@ -223,123 +388,78 @@ export function shouldAiReply(content: string): boolean {
   return trimmed.endsWith('?') || trimmed.endsWith('？')
 }
 
-async function countRecentAiMessages(roomId: string): Promise<number> {
-  const since = new Date(Date.now() - RATE_LIMIT_WINDOW_MS).toISOString()
+async function countAiTeacherRepliesForUser(roomId: string, userId: string, windowMs: number): Promise<number> {
+  const since = new Date(Date.now() - windowMs).toISOString()
   const { count, error } = await getDb()
     .from('room_messages')
     .select('id', { count: 'exact', head: true })
     .eq('room_id', roomId)
+    .eq('user_id', userId)
     .eq('sender_type', 'ai_teacher')
     .gte('created_at', since)
 
   if (error) {
-    console.error('[roomAi] 최근 AI쌤 메시지 수 조회 실패:', error)
+    console.error('[roomAi] 사용자별 AI쌤 응답 수 조회 실패:', error)
     return 0
   }
   return count ?? 0
 }
 
-async function hasRecentNotice(roomId: string): Promise<boolean> {
-  const since = new Date(Date.now() - RATE_LIMIT_WINDOW_MS).toISOString()
-  const { data, error } = await getDb()
-    .from('room_messages')
-    .select('content')
-    .eq('room_id', roomId)
-    .eq('sender_type', 'ai_teacher')
-    .gte('created_at', since)
-    .order('created_at', { ascending: false })
-    .limit(1)
-
-  if (error) {
-    console.error('[roomAi] 최근 안내 메시지 조회 실패:', error)
-    return false
-  }
-  return data?.[0]?.content === RATE_LIMIT_NOTICE
-}
-
-async function isMostRecentMessageFromAiTeacher(roomId: string): Promise<boolean> {
-  const { data, error } = await getDb()
-    .from('room_messages')
-    .select('sender_type')
-    .eq('room_id', roomId)
-    .order('created_at', { ascending: false })
-    .limit(1)
-    .maybeSingle()
-
-  if (error) {
-    console.error('[roomAi] 최근 메시지 발신자 조회 실패:', error)
-    return false
-  }
-  return data?.sender_type === 'ai_teacher'
-}
-
-/** 회원이 올린 트리거 메시지에 AI쌤이 답한다. 비용 보호를 위해 분당 응답 횟수를 제한한다. */
+/**
+ * 회원이 올린 트리거 메시지에 AI쌤이 답한다.
+ * 남용 방지: 회원 1명당 방 하나에서 분당/일별 호출 한도를 넘으면 Claude를 호출하지 않고
+ * { limited: true }를 돌려준다 — 호출부(route.ts)가 이 플래그로 해당 사용자에게만 안내를
+ * 보여주고, 방 전체 채팅에는 안내 메시지를 남기지 않는다(다른 회원에게 스팸처럼 보이지 않게).
+ * "회원 메시지 1개당 AI쌤 응답 최대 1개"는 triggered_by 부분 유니크 인덱스로 DB가 보장한다
+ * (예전의 "가장 최근 메시지가 AI쌤이면 건너뛴다" 휴리스틱은 지연 표시되는 AI 학생/보정
+ * 메시지 때문에 오판하는 경우가 있어 제거했다).
+ */
 export async function maybeReplyToMember(
   room: RoomContext,
-  trigger: { nickname: string; content: string },
-): Promise<void> {
-  // 연속 발언 방지: 가장 최근 메시지가 이미 AI쌤이면(동시 요청 등으로 먼저 답했다면)
-  // 새 회원 메시지가 올라오기 전까지는 AI쌤이 또 말하지 않는다.
-  if (await isMostRecentMessageFromAiTeacher(room.id)) return
-
-  const recentAiCount = await countRecentAiMessages(room.id)
-  if (recentAiCount >= RATE_LIMIT_MAX_PER_MINUTE) {
-    const alreadyNotified = await hasRecentNotice(room.id)
-    if (!alreadyNotified) {
-      await insertAiMessage(room.id, RATE_LIMIT_NOTICE)
-    }
-    return
+  trigger: { id: string; nickname: string; content: string; userId: string },
+): Promise<{ limited: boolean }> {
+  const [minuteCount, dailyCount] = await Promise.all([
+    countAiTeacherRepliesForUser(room.id, trigger.userId, AI_TEACHER_PER_USER_MINUTE_WINDOW_MS),
+    countAiTeacherRepliesForUser(room.id, trigger.userId, AI_TEACHER_PER_USER_DAILY_WINDOW_MS),
+  ])
+  if (minuteCount >= AI_TEACHER_PER_USER_MINUTE_LIMIT || dailyCount >= AI_TEACHER_PER_USER_DAILY_LIMIT) {
+    return { limited: true }
   }
 
   if (!process.env.ANTHROPIC_API_KEY) {
     console.error('[roomAi] ANTHROPIC_API_KEY가 설정되어 있지 않습니다.')
-    await insertAiMessage(room.id, FALLBACK_REPLY)
-    return
+    await insertAiMessage(room.id, FALLBACK_REPLY, { triggeredBy: trigger.id, userId: trigger.userId })
+    return { limited: false }
   }
 
-  const { data: recent, error } = await getDb()
-    .from('room_messages')
-    .select('nickname, sender_type, content')
-    .eq('room_id', room.id)
-    .order('created_at', { ascending: false })
-    .limit(RECENT_CONTEXT_LIMIT)
-
-  if (error) {
-    console.error('[roomAi] 최근 대화 조회 실패:', error)
-    await insertAiMessage(room.id, FALLBACK_REPLY)
-    return
-  }
-
-  const history = ((recent ?? []) as Pick<DbRoomMessage, 'nickname' | 'sender_type' | 'content'>[])
-    .slice()
-    .reverse()
-
-  const transcript = history.map((m) => `${m.nickname}: ${m.content}`).join('\n')
+  const { summaryText, recentTranscript } = await getConversationContext(room.id)
 
   try {
     const client = anthropicClient()
     const response = await client.messages.create({
-      model: 'claude-opus-4-8',
+      model: MAIN_MODEL,
       max_tokens: 400,
-      system: basePersonaPrompt(room),
+      system: cachedSystem(basePersonaPrompt(room)),
       messages: [
         {
           role: 'user',
-          content: `다음은 이 방의 최근 대화 기록입니다.\n\n${transcript}\n\n마지막 메시지(${trigger.nickname}: ${trigger.content})에 대해 AI쌤으로서 답변해주세요.`,
+          content: buildContextualPrompt(
+            summaryText,
+            recentTranscript,
+            `마지막 메시지(${trigger.nickname}: ${trigger.content})에 대해 AI쌤으로서 답변해주세요.`,
+          ),
         },
       ],
     })
 
-    const text = response.content
-      .filter((block): block is Anthropic.TextBlock => block.type === 'text')
-      .map((block) => block.text)
-      .join('')
-
-    await insertAiMessage(room.id, text || FALLBACK_REPLY)
+    const text = extractText(response)
+    logUsage({ roomId: room.id, purpose: 'ai_teacher_reply', model: MAIN_MODEL, usage: response.usage })
+    await insertAiMessage(room.id, text || FALLBACK_REPLY, { triggeredBy: trigger.id, userId: trigger.userId })
   } catch (err) {
     console.error('[roomAi] 답변 생성 실패:', err)
-    await insertAiMessage(room.id, FALLBACK_REPLY)
+    await insertAiMessage(room.id, FALLBACK_REPLY, { triggeredBy: trigger.id, userId: trigger.userId })
   }
+  return { limited: false }
 }
 
 async function countRecentAiStudentMessages(roomId: string): Promise<number> {
@@ -360,23 +480,20 @@ async function countRecentAiStudentMessages(roomId: string): Promise<number> {
 
 /**
  * AI 학생이 쓴 글에 가벼운 오해가 섞여 있을 때(NEEDS_CLARIFICATION:yes), AI쌤이 뒤이어
- * 자연스럽게 바로잡는다. AI쌤의 분당 응답 횟수 제한을 그대로 공유하며, 제한에 걸리면
- * 조용히 건너뛴다(AI 학생 발화는 이미 자연스러운 대화의 일부라 별도 안내는 띄우지 않는다).
+ * 자연스럽게 바로잡는다. 간단한 보정 작업이라 저렴한 모델을 쓴다.
  */
 async function maybeSendStudentClarification(
   room: RoomContext,
   info: { studentNickname: string; studentContent: string; visibleAt: string },
 ): Promise<void> {
-  const recentAiCount = await countRecentAiMessages(room.id)
-  if (recentAiCount >= RATE_LIMIT_MAX_PER_MINUTE) return
   if (!process.env.ANTHROPIC_API_KEY) return
 
   try {
     const client = anthropicClient()
     const response = await client.messages.create({
-      model: 'claude-opus-4-8',
+      model: CHEAP_MODEL,
       max_tokens: 250,
-      system: basePersonaPrompt(room),
+      system: cachedSystem(basePersonaPrompt(room)),
       messages: [
         {
           role: 'user',
@@ -386,8 +503,9 @@ async function maybeSendStudentClarification(
     })
 
     const text = extractText(response)
+    logUsage({ roomId: room.id, purpose: 'clarification', model: CHEAP_MODEL, usage: response.usage })
     if (text) {
-      await insertAiMessage(room.id, text, undefined, info.visibleAt)
+      await insertAiMessage(room.id, text, { visibleAt: info.visibleAt })
     }
   } catch (err) {
     console.error('[roomAi] AI 학생 발언 보정 생성 실패:', err)
@@ -400,6 +518,7 @@ async function maybeSendStudentClarification(
  * 방해하지 않고, 회원 메시지 1개당 AI 학생 응답은 최대 1개로 제한한다. 비용 보호를 위해
  * 방마다 10분당 AI 학생 메시지 최대 5개로 막고, 같은 트리거 메시지에 대한 중복 응답은
  * room_messages.triggered_by의 부분 유니크 인덱스로 DB 차원에서도 막는다.
+ * 간단한 작업이라 저렴한 모델을 쓴다.
  */
 export async function maybeTriggerAiStudent(
   room: RoomContext,
@@ -432,38 +551,28 @@ export async function maybeTriggerAiStudent(
   if ((await countRecentAiStudentMessages(room.id)) >= AI_STUDENT_RATE_LIMIT_MAX) return
   if (!process.env.ANTHROPIC_API_KEY) return
 
-  const { data: recent, error: historyError } = await db
-    .from('room_messages')
-    .select('nickname, sender_type, content')
-    .eq('room_id', room.id)
-    .order('created_at', { ascending: false })
-    .limit(RECENT_CONTEXT_LIMIT)
-
-  if (historyError) {
-    console.error('[roomAi] AI 학생용 대화 조회 실패:', historyError)
-    return
-  }
-
-  const history = ((recent ?? []) as Pick<DbRoomMessage, 'nickname' | 'sender_type' | 'content'>[])
-    .slice()
-    .reverse()
-  const transcript = history.map((m) => `${m.nickname}: ${m.content}`).join('\n')
+  const { summaryText, recentTranscript } = await getConversationContext(room.id)
 
   try {
     const client = anthropicClient()
     const response = await client.messages.create({
-      model: 'claude-opus-4-8',
+      model: CHEAP_MODEL,
       max_tokens: 200,
-      system: studentPersonaPrompt(room, persona),
+      system: cachedSystem(studentPersonaPrompt(room, persona)),
       messages: [
         {
           role: 'user',
-          content: `다음은 이 방의 최근 대화입니다.\n\n${transcript}\n\n마지막 메시지(${trigger.nickname}: ${trigger.content})를 보고, 당신이라면 자연스럽게 어떻게 반응할지 가상 수강생으로서 짧게 답해주세요.`,
+          content: buildContextualPrompt(
+            summaryText,
+            recentTranscript,
+            `마지막 메시지(${trigger.nickname}: ${trigger.content})를 보고, 당신이라면 자연스럽게 어떻게 반응할지 가상 수강생으로서 짧게 답해주세요.`,
+          ),
         },
       ],
     })
 
     const { content: cleaned, needsClarification } = parseClarificationTag(extractText(response))
+    logUsage({ roomId: room.id, purpose: 'ai_student_reply', model: CHEAP_MODEL, usage: response.usage })
     if (!cleaned) return
 
     const { error: insertError, visibleAt } = await insertAiStudentMessage({

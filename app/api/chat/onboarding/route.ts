@@ -4,14 +4,14 @@ import { getCurrentUser } from '@/lib/auth'
 import { getDb, type AiInterest, type AiLevel } from '@/lib/db'
 import { ConfigError } from '@/lib/errors'
 
-const AI_INTERESTS: AiInterest[] = ['업무활용', '공부', '창작', '기타']
+const AI_INTERESTS: AiInterest[] = ['업무활용', '공부', '창작', '자유주제']
 const AI_LEVELS: AiLevel[] = ['beginner', 'intermediate', 'advanced']
 
 const systemPrompt = `당신은 ELAI(Easy Learning AI)의 AI쌤입니다. 지금은 방금 가입한 신규 회원과 첫 대화를 나누는 "온보딩" 시간입니다.
 
 목표: 딱딱한 설문이 아니라 친근한 잡담처럼 대화하면서 아래 세 가지를 자연스럽게 파악합니다.
 1. 직업 또는 하는 일
-2. AI 관심 분야 — 반드시 다음 중 하나로 분류: 업무활용 / 공부 / 창작 / 기타
+2. AI 관심 분야 — 반드시 다음 중 하나로 분류: 업무활용 / 공부 / 창작 / 자유주제(특정 분야에 안 묶인 다양한 질문)
 3. 현재 AI 사용 수준 — 사용자가 "전혀 모름", "들어본 적 있음", "조금 써봤음", "자주 씀" 중 어떤 식으로 답하든, 내부적으로 다음 기준으로 매핑:
    - 전혀 모름, 들어본 적 있음 → beginner
    - 조금 써봤음 → intermediate
@@ -112,7 +112,7 @@ export async function POST(req: NextRequest) {
       const job = toolInput.job?.trim() || '알 수 없음'
       const ai_interest = AI_INTERESTS.includes(toolInput.ai_interest as AiInterest)
         ? (toolInput.ai_interest as AiInterest)
-        : '기타'
+        : '자유주제'
       const ai_level = AI_LEVELS.includes(toolInput.ai_level as AiLevel)
         ? (toolInput.ai_level as AiLevel)
         : 'beginner'

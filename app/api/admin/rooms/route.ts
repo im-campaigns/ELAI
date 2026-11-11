@@ -5,7 +5,7 @@ import { ConfigError } from '@/lib/errors'
 import { generateAiStudentsForRoom } from '@/lib/aiStudents'
 
 const LEVELS: AiLevel[] = ['beginner', 'intermediate', 'advanced']
-const INTERESTS: AiInterest[] = ['업무활용', '공부', '창작', '기타']
+const INTERESTS: AiInterest[] = ['업무활용', '공부', '창작', '자유주제']
 
 type MemberWithUser = Pick<DbRoomMember, 'room_id' | 'user_id' | 'status' | 'requested_at'> & {
   users: { nickname: string; job: string | null; ai_level: AiLevel | null; ai_interest: AiInterest | null } | null

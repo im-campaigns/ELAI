@@ -25,7 +25,7 @@ export function getDb(): SupabaseClient {
   return client
 }
 
-export type AiInterest = '업무활용' | '공부' | '창작' | '기타'
+export type AiInterest = '업무활용' | '공부' | '창작' | '자유주제'
 export type AiLevel = 'beginner' | 'intermediate' | 'advanced'
 
 export type DbUser = {
@@ -112,5 +112,25 @@ export type DbAiStudent = {
   nickname: string
   persona: AiStudentPersona
   is_active: boolean
+  created_at: string
+}
+
+export type DbRoomConversationSummary = {
+  room_id: string
+  summary: string
+  message_count_at_summary: number
+  updated_at: string
+}
+
+export type AiUsagePurpose = 'ai_teacher_reply' | 'ai_student_reply' | 'welcome' | 'clarification' | 'summary'
+
+export type DbAiUsageLog = {
+  id: string
+  room_id: string
+  usage_date: string
+  purpose: AiUsagePurpose
+  model: string
+  input_tokens: number
+  output_tokens: number
   created_at: string
 }

@@ -338,7 +338,7 @@ export default function AdminRoomPanel({ rooms, pending }: Props) {
                 <option value="업무활용">업무활용</option>
                 <option value="공부">공부</option>
                 <option value="창작">창작</option>
-                <option value="기타">기타</option>
+                <option value="자유주제">자유주제</option>
               </select>
             </div>
             <div>

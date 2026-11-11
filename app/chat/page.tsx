@@ -2,6 +2,7 @@
 
 import { useState, useRef, useEffect } from 'react'
 import Link from 'next/link'
+import ChatMarkdown from '@/components/ChatMarkdown'
 
 type Message = {
   role: 'user' | 'assistant'
@@ -211,13 +212,15 @@ export default function ChatPage() {
                 </div>
               )}
               <div
-                className={`max-w-[80%] px-4 py-3 rounded-2xl text-sm leading-relaxed whitespace-pre-wrap ${
+                className={`max-w-[80%] px-4 py-3 rounded-2xl text-sm leading-relaxed ${
                   msg.role === 'user'
                     ? 'bg-primary-600 text-white rounded-br-sm'
                     : 'bg-white text-slate-800 border border-slate-100 rounded-bl-sm shadow-sm'
                 }`}
               >
-                {msg.content || (
+                {msg.content ? (
+                  <ChatMarkdown content={msg.content} />
+                ) : (
                   <span className="flex gap-1 items-center py-1">
                     <span className="typing-dot w-2 h-2 bg-slate-400 rounded-full inline-block" />
                     <span className="typing-dot w-2 h-2 bg-slate-400 rounded-full inline-block" />

@@ -2,20 +2,25 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getCurrentUser } from '@/lib/auth'
 import { getDb, type DbRoomMessage, type DbStudyRoom } from '@/lib/db'
 import { ConfigError } from '@/lib/errors'
-import { maybeReplyToMember, maybeTriggerAiStudent, shouldAiReply } from '@/lib/roomAi'
+import { AI_TEACHER_LIMIT_MESSAGE, maybeReplyToMember, maybeTriggerAiStudent, shouldAiReply } from '@/lib/roomAi'
 
 const MAX_CONTENT_LENGTH = 500
 const MIN_RESEND_INTERVAL_MS = 2000
+const PAGE_SIZE = 50
+
+const MESSAGE_SELECT = 'id, room_id, user_id, ai_student_id, sender_type, nickname, content, created_at, visible_at, triggered_by'
 
 function formatMessage(m: DbRoomMessage) {
   return {
     id: m.id,
     userId: m.user_id,
+    aiStudentId: m.ai_student_id,
     senderType: m.sender_type,
     nickname: m.nickname,
     content: m.content,
     createdAt: m.created_at,
     visibleAt: m.visible_at,
+    triggeredBy: m.triggered_by,
   }
 }
 
@@ -65,6 +70,7 @@ export async function GET(req: NextRequest, { params }: { params: { roomId: stri
     if (error) return error
 
     const after = req.nextUrl.searchParams.get('after')
+    const before = req.nextUrl.searchParams.get('before')
     const db = getDb()
     const nowIso = new Date().toISOString()
 
@@ -76,12 +82,12 @@ export async function GET(req: NextRequest, { params }: { params: { roomId: stri
 
       const { data, error: queryError } = await db
         .from('room_messages')
-        .select('id, room_id, user_id, sender_type, nickname, content, created_at, visible_at')
+        .select(MESSAGE_SELECT)
         .eq('room_id', room!.id)
         .gt('visible_at', afterDate.toISOString())
         .lte('visible_at', nowIso)
         .order('visible_at', { ascending: true })
-        .limit(50)
+        .limit(PAGE_SIZE)
 
       if (queryError) {
         console.error('[group/messages] 조회 실패:', queryError)
@@ -91,13 +97,37 @@ export async function GET(req: NextRequest, { params }: { params: { roomId: stri
       return NextResponse.json({ messages: ((data ?? []) as DbRoomMessage[]).map(formatMessage) })
     }
 
+    if (before) {
+      const beforeDate = new Date(before)
+      if (Number.isNaN(beforeDate.getTime())) {
+        return NextResponse.json({ error: '시간 형식이 올바르지 않아요.' }, { status: 400 })
+      }
+
+      // "이전 대화 보기": before보다 앞선 메시지를 최신순으로 PAGE_SIZE개 가져온 뒤 시간순으로 뒤집는다.
+      const { data, error: queryError } = await db
+        .from('room_messages')
+        .select(MESSAGE_SELECT)
+        .eq('room_id', room!.id)
+        .lt('visible_at', beforeDate.toISOString())
+        .order('visible_at', { ascending: false })
+        .limit(PAGE_SIZE)
+
+      if (queryError) {
+        console.error('[group/messages] 이전 대화 조회 실패:', queryError)
+        return NextResponse.json({ error: '이전 대화를 불러오지 못했어요.' }, { status: 500 })
+      }
+
+      const messages = ((data ?? []) as DbRoomMessage[]).slice().reverse().map(formatMessage)
+      return NextResponse.json({ messages, hasMore: messages.length === PAGE_SIZE })
+    }
+
     const { data, error: queryError } = await db
       .from('room_messages')
-      .select('id, room_id, user_id, sender_type, nickname, content, created_at, visible_at')
+      .select(MESSAGE_SELECT)
       .eq('room_id', room!.id)
       .lte('visible_at', nowIso)
       .order('visible_at', { ascending: false })
-      .limit(50)
+      .limit(PAGE_SIZE)
 
     if (queryError) {
       console.error('[group/messages] 조회 실패:', queryError)
@@ -105,7 +135,7 @@ export async function GET(req: NextRequest, { params }: { params: { roomId: stri
     }
 
     const messages = ((data ?? []) as DbRoomMessage[]).slice().reverse().map(formatMessage)
-    return NextResponse.json({ messages })
+    return NextResponse.json({ messages, hasMore: messages.length === PAGE_SIZE })
   } catch (err) {
     if (err instanceof ConfigError) {
       console.error('[group/messages GET] 설정 오류:', err.message)
@@ -160,7 +190,7 @@ export async function POST(req: NextRequest, { params }: { params: { roomId: str
     const { data: inserted, error: insertError } = await db
       .from('room_messages')
       .insert({ room_id: room!.id, user_id: user.id, sender_type: 'member', nickname: user.nickname, content })
-      .select('id, room_id, user_id, sender_type, nickname, content, created_at, visible_at')
+      .select(MESSAGE_SELECT)
       .single()
 
     if (insertError || !inserted) {
@@ -173,15 +203,25 @@ export async function POST(req: NextRequest, { params }: { params: { roomId: str
     // AI쌤이 답할 질문이면 같은 메시지에 AI 학생이 끼지 않아, 회원 메시지 1개당
     // AI 응답(AI쌤 또는 AI 학생 중 하나)이 최대 1개로 자연스럽게 유지된다.
     const insertedMessage = inserted as DbRoomMessage
+    let aiLimited = false
     if (insertedMessage.sender_type === 'member') {
       if (shouldAiReply(content)) {
-        await maybeReplyToMember(room!, { nickname: user.nickname, content })
+        const result = await maybeReplyToMember(room!, {
+          id: insertedMessage.id,
+          nickname: user.nickname,
+          content,
+          userId: user.id,
+        })
+        aiLimited = result.limited
       } else {
         await maybeTriggerAiStudent(room!, { id: insertedMessage.id, nickname: user.nickname, content })
       }
     }
 
-    return NextResponse.json({ message: formatMessage(insertedMessage) })
+    return NextResponse.json({
+      message: formatMessage(insertedMessage),
+      ...(aiLimited ? { aiLimited: true, aiLimitedMessage: AI_TEACHER_LIMIT_MESSAGE } : {}),
+    })
   } catch (err) {
     if (err instanceof ConfigError) {
       console.error('[group/messages POST] 설정 오류:', err.message)

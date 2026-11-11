@@ -33,7 +33,7 @@ const interestLabel: Record<AiInterest, string> = {
   업무활용: '업무에 AI를 활용하는 것',
   공부: 'AI 자체를 공부하는 것',
   창작: '창작 활동에 AI를 활용하는 것',
-  기타: 'AI를 폭넓게 활용하는 것',
+  자유주제: 'AI를 폭넓게 활용하는 것',
 }
 
 function buildSystemPrompt(user: { job: string | null; ai_interest: AiInterest | null; ai_level: AiLevel | null; onboarding_done: boolean } | null): string {

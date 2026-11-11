@@ -18,7 +18,7 @@ export const AI_STUDENT_TEMPLATES: AiStudentTemplate[] = [
   {
     nickname: '민지맘',
     level: 'beginner',
-    interest: '기타',
+    interest: '자유주제',
     persona: {
       ageGroup: '30대',
       job: '주부',
@@ -66,7 +66,7 @@ export const AI_STUDENT_TEMPLATES: AiStudentTemplate[] = [
   {
     nickname: '중고차딜러K',
     level: 'beginner',
-    interest: '기타',
+    interest: '자유주제',
     persona: {
       ageGroup: '40대',
       job: '자영업자',
@@ -114,7 +114,7 @@ export const AI_STUDENT_TEMPLATES: AiStudentTemplate[] = [
   {
     nickname: '소상공인사장님',
     level: 'intermediate',
-    interest: '기타',
+    interest: '자유주제',
     persona: {
       ageGroup: '40대',
       job: '매장 운영',
@@ -194,7 +194,7 @@ export const AI_STUDENT_TEMPLATES: AiStudentTemplate[] = [
   {
     nickname: '북카페사장',
     level: 'advanced',
-    interest: '기타',
+    interest: '자유주제',
     persona: {
       ageGroup: '50대',
       job: '북카페 운영',
@@ -226,7 +226,7 @@ export const AI_STUDENT_TEMPLATES: AiStudentTemplate[] = [
   {
     nickname: '헬스가고싶다',
     level: 'intermediate',
-    interest: '기타',
+    interest: '자유주제',
     persona: {
       ageGroup: '30대',
       job: '직장인',
