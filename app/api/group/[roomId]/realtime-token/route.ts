@@ -26,10 +26,13 @@ export async function POST(_req: Request, { params }: { params: { roomId: string
       return NextResponse.json({ error: 'Realtime이 아직 설정되지 않았어요.' }, { status: 503 })
     }
 
-    const token = jwt.sign({ role: 'authenticated', room_id: room!.id, sub: user.id }, secret, {
-      algorithm: 'HS256',
-      expiresIn: TOKEN_TTL_SECONDS,
-    })
+    // aud: 'authenticated'는 Supabase Auth가 평소 발급하는 토큰과 동일한 형태를 맞추기 위한
+    // 값이다(필수는 아니지만, Realtime/PostgREST 쪽 검증 경로와 더 가깝게 맞춰둔다).
+    const token = jwt.sign(
+      { role: 'authenticated', aud: 'authenticated', room_id: room!.id, sub: user.id },
+      secret,
+      { algorithm: 'HS256', expiresIn: TOKEN_TTL_SECONDS },
+    )
 
     return NextResponse.json({ token, expiresIn: TOKEN_TTL_SECONDS })
   } catch (err) {

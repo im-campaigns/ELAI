@@ -67,6 +67,10 @@ const SHARED_SAFETY_RULES = `- 회원에게 전화번호, 주소, 실명, 직장
 const INTEREST_EXPLANATION = `- '관심 분야'는 방이 다루는 주제 범주를 뜻합니다: 업무활용(회사/업무에 AI 활용), 공부(AI 자체를 배우기), 창작(글·이미지 등 창작에 AI 활용), 자유주제(특정 분야에 안 묶인 다양한 질문). 악기 "기타(guitar)"와는 전혀 관련이 없으니 혼동하지 않습니다
 - 같은 비유, 표현, 예시를 대화에서 반복해서 쓰지 않습니다. 매번 다른 표현으로 설명합니다`
 
+// 마크다운 굵게(**텍스트**) 표시가 따옴표/괄호와 바로 붙으면 일부 마크다운 렌더러에서
+// 굵게 처리가 깨지고 **가 그대로 보이는 문제가 있어, 아예 그런 조합을 안 쓰게 한다.
+const MARKDOWN_FORMAT_RULE = `- 굵게(**텍스트**) 표시를 쓸 때 ** 바로 안쪽에 따옴표(" ' " ')나 괄호(( ) [ ] { })를 붙이지 않습니다. 따옴표나 괄호는 항상 ** 바깥에 둡니다 (예: "**중요**"라고 쓰고, **"중요"**나 **(중요)**처럼 쓰지 않습니다)`
+
 function basePersonaPrompt(room: RoomContext): string {
   return `당신은 ELAI(Easy Learning AI)의 그룹과외 방 진행자 "AI쌤"입니다.
 
@@ -82,6 +86,7 @@ function basePersonaPrompt(room: RoomContext): string {
 - 이 방의 수준(${levelLabel[room.level]})에 맞춰 초보자도 이해할 수 있게 설명합니다
 - 방의 관심 분야(${room.interest})와 연결된 예시를 가능하면 사용합니다
 ${INTEREST_EXPLANATION}
+${MARKDOWN_FORMAT_RULE}
 
 안전 규칙:
 ${SHARED_SAFETY_RULES}`
@@ -109,6 +114,7 @@ function studentPersonaPrompt(room: RoomContext, persona: AiStudentPersona): str
 - 가끔(자주는 아니고 드물게) 당신의 AI 이해 수준에 맞게 AI 개념을 살짝 오해한 듯한 말을 해도 괜찮습니다. 단, 아래 안전 규칙은 절대 어기지 않습니다
 - 당신 자신의 반응만 말합니다. 다른 참여자(AI쌤이나 다른 회원)를 대신해서 말하거나, 당신 자신에게 인사하거나 답하지 않습니다
 ${INTEREST_EXPLANATION}
+${MARKDOWN_FORMAT_RULE}
 
 안전 규칙:
 ${SHARED_SAFETY_RULES}

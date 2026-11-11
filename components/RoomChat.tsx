@@ -19,7 +19,12 @@ type Props = {
   currentUserId: string
 }
 
-const POLL_INTERVAL_MS = 3000
+// Realtime이 "구독됨" 상태를 보고해도 실제로 이벤트가 안 오는 경우가 있어(원인 불명,
+// 콘솔 로그로 계속 관찰 중), realtime 상태를 믿고 polling을 완전히 끄지 않는다.
+// 평소엔 느슨하게, 내가 AI쌤을 트리거할 만한 메시지를 보낸 직후에는 빠르게 확인한다.
+const IDLE_POLL_INTERVAL_MS = 10000
+const FAST_POLL_INTERVAL_MS = 3000
+const FAST_POLL_DURATION_MS = 60000
 const MAX_LENGTH = 500
 const NEAR_BOTTOM_THRESHOLD_PX = 120
 const AI_TYPING_TIMEOUT_MS = 20000
@@ -65,13 +70,28 @@ export default function RoomChat({ roomId, currentUserId }: Props) {
 
   const pollingRef = useRef(false)
 
+  const fastPollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const fastPollTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const stopFastPolling = useCallback(() => {
+    if (fastPollIntervalRef.current) {
+      clearInterval(fastPollIntervalRef.current)
+      fastPollIntervalRef.current = null
+    }
+    if (fastPollTimeoutRef.current) {
+      clearTimeout(fastPollTimeoutRef.current)
+      fastPollTimeoutRef.current = null
+    }
+  }, [])
+
   const hideAiTyping = useCallback(() => {
     setAiTyping(false)
     if (aiTypingTimeoutRef.current) {
       clearTimeout(aiTypingTimeoutRef.current)
       aiTypingTimeoutRef.current = null
     }
-  }, [])
+    stopFastPolling()
+  }, [stopFastPolling])
 
   const showAiTyping = useCallback(() => {
     setAiTyping(true)
@@ -111,9 +131,9 @@ export default function RoomChat({ roomId, currentUserId }: Props) {
 
   const fetchMessages = useCallback(
     async (after: string | null) => {
-      // realtime이 정상 구독 중이면 중복으로 폴링하지 않는다.
-      if (after && realtimeActiveRef.current) return
-      // 이전 폴링이 아직 끝나지 않았으면 겹쳐서 요청하지 않는다.
+      // realtime "구독됨" 상태만 믿고 polling을 끄면, 구독은 됐는데 이벤트가 안 오는
+      // 경우(원인 불명) 화면이 영영 안 갱신된다. 그래서 realtime 상태와 상관없이 항상 polling한다.
+      // 이전 polling이 아직 끝나지 않았으면 겹쳐서 요청하지 않는다.
       if (pollingRef.current) return
       pollingRef.current = true
       try {
@@ -136,6 +156,16 @@ export default function RoomChat({ roomId, currentUserId }: Props) {
     },
     [roomId, mergeMessages],
   )
+
+  // 메시지를 보낸 뒤(특히 AI쌤을 트리거할 만한 메시지) 최대 60초 동안 3초 간격으로 빠르게
+  // 확인한다. realtime이 실패하거나 조용히 멈춰도 답이 반드시 화면에 뜨도록 하는 안전장치.
+  const startFastPolling = useCallback(() => {
+    stopFastPolling()
+    fastPollIntervalRef.current = setInterval(() => {
+      fetchMessages(lastVisibleAtRef.current)
+    }, FAST_POLL_INTERVAL_MS)
+    fastPollTimeoutRef.current = setTimeout(stopFastPolling, FAST_POLL_DURATION_MS)
+  }, [fetchMessages, stopFastPolling])
 
   const loadOlder = useCallback(async () => {
     if (loadingOlder || messages.length === 0) return
@@ -184,7 +214,10 @@ export default function RoomChat({ roomId, currentUserId }: Props) {
   // 타이머로 늦춘다(AI 학생/보정 메시지의 "사람처럼 시차" 효과를 realtime에서도 유지).
   useEffect(() => {
     const maybeClient = getRealtimeClient()
-    if (!maybeClient) return // 공개 환경변수가 없으면 realtime을 쓰지 않고 polling만 사용한다
+    if (!maybeClient) {
+      console.warn('[realtime] NEXT_PUBLIC_SUPABASE_URL/ANON_KEY가 없어 polling만 사용합니다.')
+      return
+    }
     const client = maybeClient
 
     let cancelled = false
@@ -195,10 +228,16 @@ export default function RoomChat({ roomId, currentUserId }: Props) {
     async function fetchToken(): Promise<string | null> {
       try {
         const res = await fetch(`/api/group/${roomId}/realtime-token`, { method: 'POST' })
-        if (!res.ok) return null
+        if (!res.ok) {
+          console.error('[realtime] 토큰 발급 실패, status=', res.status)
+          return null
+        }
         const data = await res.json()
-        return typeof data?.token === 'string' ? data.token : null
-      } catch {
+        const token = typeof data?.token === 'string' ? data.token : null
+        console.log('[realtime] 토큰 발급', token ? '성공' : '실패(응답에 token 없음)', 'expiresIn=', data?.expiresIn)
+        return token
+      } catch (err) {
+        console.error('[realtime] 토큰 요청 네트워크 오류:', err)
         return null
       }
     }
@@ -230,6 +269,7 @@ export default function RoomChat({ roomId, currentUserId }: Props) {
           'postgres_changes',
           { event: 'INSERT', schema: 'public', table: 'room_messages', filter: `room_id=eq.${roomId}` },
           (payload) => {
+            console.log('[realtime] INSERT 이벤트 수신:', payload.new)
             const row = payload.new as Record<string, unknown>
             revealWhenVisible({
               id: row.id as string,
@@ -242,7 +282,8 @@ export default function RoomChat({ roomId, currentUserId }: Props) {
             })
           },
         )
-        .subscribe((status) => {
+        .subscribe((status, err) => {
+          console.log('[realtime] 구독 상태 변경:', status, err ?? '')
           if (cancelled) return
           const active = status === 'SUBSCRIBED'
           realtimeActiveRef.current = active
@@ -266,13 +307,17 @@ export default function RoomChat({ roomId, currentUserId }: Props) {
     }
   }, [roomId, mergeMessages])
 
+  // 평소 기본 polling(10초 간격). realtime이 보조로 더 빠르게 갱신해줄 수 있지만,
+  // 이 polling은 realtime 상태와 상관없이 항상 돈다.
   useEffect(() => {
     const interval = setInterval(() => {
       if (document.hidden) return
       fetchMessages(lastVisibleAtRef.current)
-    }, POLL_INTERVAL_MS)
+    }, IDLE_POLL_INTERVAL_MS)
     return () => clearInterval(interval)
   }, [fetchMessages])
+
+  useEffect(() => stopFastPolling, [stopFastPolling])
 
   useEffect(() => {
     if (isNearBottomRef.current) {
@@ -309,6 +354,7 @@ export default function RoomChat({ roomId, currentUserId }: Props) {
     ])
     if (looksLikeAiTrigger(content)) {
       showAiTyping()
+      startFastPolling()
     }
 
     try {
