@@ -18,18 +18,38 @@ export async function GET() {
 
   try {
     const db = getDb()
-    const [{ data: rooms, error: roomsError }, { data: members, error: membersError }] = await Promise.all([
+    const startOfDay = new Date()
+    startOfDay.setUTCHours(0, 0, 0, 0)
+    const [
+      { data: rooms, error: roomsError },
+      { data: members, error: membersError },
+      { data: usageRows, error: usageError },
+    ] = await Promise.all([
       db.from('study_rooms').select('*').order('created_at', { ascending: true }),
       db
         .from('room_members')
         .select('room_id, user_id, status, requested_at, users(nickname, job, ai_level, ai_interest)')
         .order('requested_at', { ascending: true }),
+      db.from('ai_usage_log').select('input_tokens, output_tokens').gte('created_at', startOfDay.toISOString()),
     ])
 
     if (roomsError || membersError) {
       console.error('[admin/rooms GET] fetch failed:', roomsError, membersError)
       return NextResponse.json({ error: '그룹과외 정보를 불러오지 못했어요.' }, { status: 500 })
     }
+    if (usageError) {
+      console.error('[admin/rooms GET] 토큰 사용량 조회 실패:', usageError)
+    }
+
+    const tokensUsedToday = (usageRows ?? []).reduce(
+      (sum, row) => sum + (row.input_tokens ?? 0) + (row.output_tokens ?? 0),
+      0,
+    )
+    const dailyTokenBudget = Number(process.env.AI_DAILY_TOKEN_BUDGET)
+    const budget =
+      Number.isFinite(dailyTokenBudget) && dailyTokenBudget > 0
+        ? { used: tokensUsedToday, limit: dailyTokenBudget, exceeded: tokensUsedToday >= dailyTokenBudget }
+        : { used: tokensUsedToday, limit: null, exceeded: false }
 
     const roomList = (rooms ?? []) as DbStudyRoom[]
     const roomNameById = new Map(roomList.map((r) => [r.id, r.name]))
@@ -76,7 +96,7 @@ export async function GET() {
       pendingCount: pendingCountByRoom.get(room.id) ?? 0,
     }))
 
-    return NextResponse.json({ rooms: roomsResult, pending })
+    return NextResponse.json({ rooms: roomsResult, pending, budget })
   } catch (err) {
     if (err instanceof ConfigError) {
       console.error('[admin/rooms GET] 설정 오류:', err.message)

@@ -62,11 +62,18 @@ export default async function GroupRoomPage({ params }: { params: { roomId: stri
 
   const typedRoom = room as DbStudyRoom
 
-  const { count: approvedCount } = await db
-    .from('room_members')
-    .select('user_id', { count: 'exact', head: true })
-    .eq('room_id', params.roomId)
-    .eq('status', 'approved')
+  const [{ count: approvedCount }, { count: aiStudentCount }] = await Promise.all([
+    db
+      .from('room_members')
+      .select('user_id', { count: 'exact', head: true })
+      .eq('room_id', params.roomId)
+      .eq('status', 'approved'),
+    db
+      .from('ai_students')
+      .select('id', { count: 'exact', head: true })
+      .eq('room_id', params.roomId)
+      .eq('is_active', true),
+  ])
 
   return (
     <div className="flex flex-col h-[calc(100vh-64px)] bg-slate-50">
@@ -74,7 +81,10 @@ export default async function GroupRoomPage({ params }: { params: { roomId: stri
         <div className="max-w-3xl mx-auto">
           <h1 className="text-lg font-bold text-slate-800">{typedRoom.name}</h1>
           <p className="text-sm text-slate-500 mt-0.5">{typedRoom.description}</p>
-          <p className="text-xs text-slate-400 mt-1">승인된 회원 {approvedCount ?? 0}명</p>
+          <p className="text-xs text-slate-400 mt-1">
+            승인된 회원 {approvedCount ?? 0}명
+            {(aiStudentCount ?? 0) > 0 && ` · AI 참여자 ${aiStudentCount}명 포함 참여 중 ${(approvedCount ?? 0) + (aiStudentCount ?? 0)}명`}
+          </p>
           <div className="mt-3">
             <GroupAiNotice />
           </div>

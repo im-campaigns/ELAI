@@ -39,9 +39,16 @@ export type AdminPendingApplication = {
   requestedAt: string
 }
 
+export type AdminAiBudget = {
+  used: number
+  limit: number | null
+  exceeded: boolean
+}
+
 type Props = {
   rooms: AdminRoomOverview[]
   pending: AdminPendingApplication[]
+  budget: AdminAiBudget
 }
 
 const levelLabel: Record<string, string> = {
@@ -58,7 +65,7 @@ type RoomMessage = {
   createdAt: string
 }
 
-export default function AdminRoomPanel({ rooms, pending }: Props) {
+export default function AdminRoomPanel({ rooms, pending, budget }: Props) {
   const router = useRouter()
   const [decidingKey, setDecidingKey] = useState<string | null>(null)
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null)
@@ -166,6 +173,18 @@ export default function AdminRoomPanel({ rooms, pending }: Props) {
 
   return (
     <div className="space-y-8">
+      {budget.limit !== null && (
+        <div
+          className={`rounded-xl px-4 py-3 text-sm ${
+            budget.exceeded
+              ? 'bg-red-50 text-red-700 border border-red-100'
+              : 'bg-slate-50 text-slate-500 border border-slate-100'
+          }`}
+        >
+          오늘 AI 토큰 사용량: {budget.used.toLocaleString()} / {budget.limit.toLocaleString()}
+          {budget.exceeded && ' — 예산을 초과해서 AI쌤/AI 학생 응답이 잠시 중단돼요.'}
+        </div>
+      )}
       {message && (
         <div
           className={`rounded-xl px-4 py-3 text-sm ${

@@ -34,7 +34,10 @@ export async function POST(req: NextRequest) {
     }
 
     const password_hash = await hashPassword(newPassword)
-    const { error } = await db.from('users').update({ password_hash }).eq('id', user.id)
+    const { error } = await db
+      .from('users')
+      .update({ password_hash, must_change_password: false })
+      .eq('id', user.id)
 
     if (error) {
       console.error('[account/change-password] update failed:', error)

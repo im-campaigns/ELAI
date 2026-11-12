@@ -2,7 +2,13 @@
 
 import { useState } from 'react'
 
-export default function ChangePasswordForm() {
+type Props = {
+  /** 관리자 초기화 후 강제 변경 화면에서 쓰는 안내 문구/스타일로 바꾼다. */
+  forced?: boolean
+  onSuccess?: () => void
+}
+
+export default function ChangePasswordForm({ forced = false, onSuccess }: Props) {
   const [currentPassword, setCurrentPassword] = useState('')
   const [newPassword, setNewPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
@@ -34,6 +40,7 @@ export default function ChangePasswordForm() {
       setCurrentPassword('')
       setNewPassword('')
       setConfirmPassword('')
+      onSuccess?.()
     } catch {
       setMessage({ type: 'error', text: '네트워크 오류가 발생했어요.' })
     } finally {
@@ -44,9 +51,14 @@ export default function ChangePasswordForm() {
   return (
     <div className="bg-white rounded-2xl border border-slate-100 p-6 mb-6">
       <h2 className="font-bold text-slate-800 mb-4">비밀번호 변경</h2>
+      {forced && (
+        <p className="text-sm text-amber-600 bg-amber-50 border border-amber-100 rounded-xl px-4 py-3 mb-4">
+          관리자가 임시 비밀번호로 초기화했어요. 아래 "현재 비밀번호"에 임시 비밀번호를 입력하고, 새 비밀번호로 바꿔주세요.
+        </p>
+      )}
       <form onSubmit={handleSubmit} className="space-y-3 max-w-sm">
         <div>
-          <label className="block text-sm font-medium text-slate-700 mb-1.5">현재 비밀번호</label>
+          <label className="block text-sm font-medium text-slate-700 mb-1.5">현재 비밀번호{forced ? ' (임시 비밀번호)' : ''}</label>
           <input
             type="password"
             value={currentPassword}

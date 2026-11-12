@@ -1,12 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { waitUntil } from '@vercel/functions'
 import { getCurrentUser } from '@/lib/auth'
 import { getDb, type DbRoomMessage, type DbStudyRoom } from '@/lib/db'
 import { ConfigError } from '@/lib/errors'
-import { AI_TEACHER_LIMIT_MESSAGE, maybeReplyToMember, maybeTriggerAiStudent, shouldAiReply } from '@/lib/roomAi'
+import { maybeTriggerAiStudent, precheckTeacherReply, runTeacherReply, shouldAiReply } from '@/lib/roomAi'
 
 const MAX_CONTENT_LENGTH = 500
 const MIN_RESEND_INTERVAL_MS = 2000
 const PAGE_SIZE = 50
+
+// AI쌤 생성(백그라운드) + AI 학생 후속 반응까지 끝나려면 넉넉한 시간이 필요하다.
+// (Vercel Hobby 플랜은 60초가 상한이라 그 안에서 최대로 잡는다)
+export const maxDuration = 60
 
 const MESSAGE_SELECT = 'id, room_id, user_id, ai_student_id, sender_type, nickname, content, created_at, visible_at, triggered_by'
 
@@ -200,27 +205,29 @@ export async function POST(req: NextRequest, { params }: { params: { roomId: str
 
     // AI쌤 메시지(sender_type='ai_teacher')는 답변 트리거가 될 수 없다. 이 POST는
     // 항상 sender_type='member'로만 메시지를 저장하므로 아래 조건으로 다시 한 번 보장한다.
-    // AI쌤이 답할 질문이면 같은 메시지에 AI 학생이 끼지 않아, 회원 메시지 1개당
-    // AI 응답(AI쌤 또는 AI 학생 중 하나)이 최대 1개로 자연스럽게 유지된다.
+    // 실제 Claude 호출(느림)은 응답을 먼저 돌려준 뒤 waitUntil로 백그라운드 처리하고,
+    // 남용/예산 검사처럼 빠른 DB 조회만 여기서 await해 회원에게 즉시 안내할 수 있게 한다.
     const insertedMessage = inserted as DbRoomMessage
     let aiLimited = false
+    let aiLimitedMessage: string | undefined
     if (insertedMessage.sender_type === 'member') {
+      const trigger = { id: insertedMessage.id, nickname: user.nickname, content, userId: user.id }
       if (shouldAiReply(content)) {
-        const result = await maybeReplyToMember(room!, {
-          id: insertedMessage.id,
-          nickname: user.nickname,
-          content,
-          userId: user.id,
-        })
-        aiLimited = result.limited
+        const { blocked, message } = await precheckTeacherReply(room!, trigger)
+        if (blocked) {
+          aiLimited = Boolean(message)
+          aiLimitedMessage = message
+        } else {
+          waitUntil(runTeacherReply(room!, trigger))
+        }
       } else {
-        await maybeTriggerAiStudent(room!, { id: insertedMessage.id, nickname: user.nickname, content })
+        waitUntil(maybeTriggerAiStudent(room!, trigger))
       }
     }
 
     return NextResponse.json({
       message: formatMessage(insertedMessage),
-      ...(aiLimited ? { aiLimited: true, aiLimitedMessage: AI_TEACHER_LIMIT_MESSAGE } : {}),
+      ...(aiLimited ? { aiLimited: true, aiLimitedMessage } : {}),
     })
   } catch (err) {
     if (err instanceof ConfigError) {

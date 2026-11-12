@@ -31,7 +31,12 @@ export async function POST(req: NextRequest) {
     }
 
     createUserSession(user.id)
-    return NextResponse.json({ ok: true, nickname: user.nickname, onboardingDone: user.onboarding_done })
+    return NextResponse.json({
+      ok: true,
+      nickname: user.nickname,
+      onboardingDone: user.onboarding_done,
+      mustChangePassword: user.must_change_password,
+    })
   } catch (err) {
     if (err instanceof ConfigError) {
       console.error('[login] 설정 오류:', err.message)

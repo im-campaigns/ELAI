@@ -38,6 +38,7 @@ export type DbUser = {
   ai_interest: AiInterest | null
   ai_level: AiLevel | null
   onboarding_done: boolean
+  must_change_password: boolean
 }
 
 export type DbChatMessage = {

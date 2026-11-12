@@ -12,6 +12,7 @@ export type GroupRoom = {
   interest: string
   maxMembers: number
   approvedCount: number
+  aiStudentCount: number
   myStatus: 'pending' | 'approved' | 'rejected' | null
   isRecommended: boolean
 }
@@ -30,8 +31,14 @@ function RoomCard({ room, onJoin, joining }: { room: GroupRoom; onJoin: (id: str
     <div className="bg-white rounded-2xl border border-slate-100 p-5">
       <div className="flex items-start justify-between gap-3 mb-2">
         <h3 className="font-bold text-slate-800">{room.name}</h3>
-        <span className="text-xs text-slate-400 whitespace-nowrap">
-          {room.approvedCount} / {room.maxMembers}명
+        <span className="text-xs text-slate-400 whitespace-nowrap text-right">
+          회원 {room.approvedCount} / {room.maxMembers}명
+          {room.aiStudentCount > 0 && (
+            <>
+              <br />
+              참여 중 {room.approvedCount + room.aiStudentCount}명 (AI {room.aiStudentCount}명 포함)
+            </>
+          )}
         </span>
       </div>
       <p className="text-sm text-slate-500 mb-3">{room.description}</p>

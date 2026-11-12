@@ -55,14 +55,27 @@ type MemberWithUser = Pick<DbRoomMember, 'room_id' | 'user_id' | 'status' | 'req
 
 async function loadRoomsAdmin() {
   const db = getDb()
-  const [{ data: rooms }, { data: members }, { data: aiStudents }] = await Promise.all([
+  const startOfDay = new Date()
+  startOfDay.setUTCHours(0, 0, 0, 0)
+  const [{ data: rooms }, { data: members }, { data: aiStudents }, { data: usageRows }] = await Promise.all([
     db.from('study_rooms').select('*').order('created_at', { ascending: true }),
     db
       .from('room_members')
       .select('room_id, user_id, status, requested_at, users(nickname, job, ai_level, ai_interest)')
       .order('requested_at', { ascending: true }),
     db.from('ai_students').select('*').order('created_at', { ascending: true }),
+    db.from('ai_usage_log').select('input_tokens, output_tokens').gte('created_at', startOfDay.toISOString()),
   ])
+
+  const tokensUsedToday = (usageRows ?? []).reduce(
+    (sum, row) => sum + (row.input_tokens ?? 0) + (row.output_tokens ?? 0),
+    0,
+  )
+  const dailyTokenBudget = Number(process.env.AI_DAILY_TOKEN_BUDGET)
+  const budget =
+    Number.isFinite(dailyTokenBudget) && dailyTokenBudget > 0
+      ? { used: tokensUsedToday, limit: dailyTokenBudget, exceeded: tokensUsedToday >= dailyTokenBudget }
+      : { used: tokensUsedToday, limit: null, exceeded: false }
 
   const roomList = (rooms ?? []) as DbStudyRoom[]
   const roomNameById = new Map(roomList.map((r) => [r.id, r.name]))
@@ -113,7 +126,7 @@ async function loadRoomsAdmin() {
     aiStudents: aiStudentsByRoom.get(room.id) ?? [],
   }))
 
-  return { rooms: roomsResult, pending }
+  return { rooms: roomsResult, pending, budget }
 }
 
 export default async function AdminPage() {
@@ -122,7 +135,7 @@ export default async function AdminPage() {
   }
 
   const users = await loadUsers()
-  const { rooms, pending } = await loadRoomsAdmin()
+  const { rooms, pending, budget } = await loadRoomsAdmin()
 
   return (
     <div className="min-h-screen bg-slate-50 py-12 px-4">
@@ -144,7 +157,7 @@ export default async function AdminPage() {
 
         <div className="mt-12">
           <h1 className="text-2xl font-bold text-slate-800 mb-6">그룹과외</h1>
-          <AdminRoomPanel rooms={rooms} pending={pending} />
+          <AdminRoomPanel rooms={rooms} pending={pending} budget={budget} />
         </div>
       </div>
     </div>

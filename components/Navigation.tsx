@@ -1,9 +1,13 @@
 'use client'
 
 import Link from 'next/link'
-import { usePathname } from 'next/navigation'
+import { usePathname, useRouter } from 'next/navigation'
 import { useEffect, useState } from 'react'
 import LogoutButton from './LogoutButton'
+
+// 관리자가 비밀번호를 초기화한 회원은 새 비밀번호로 바꾸기 전까지 이 페이지로만 이동할 수 있다.
+const FORCE_PASSWORD_CHANGE_PATH = '/force-password-change'
+const PASSWORD_CHANGE_EXEMPT_PATHS = new Set([FORCE_PASSWORD_CHANGE_PATH, '/login', '/signup'])
 
 const navLinks = [
   { href: '/', label: '홈' },
@@ -16,15 +20,21 @@ const navLinks = [
 
 export default function Navigation() {
   const pathname = usePathname()
+  const router = useRouter()
   const [menuOpen, setMenuOpen] = useState(false)
   const [nickname, setNickname] = useState<string | null | undefined>(undefined)
 
   useEffect(() => {
     fetch('/api/auth/me')
       .then((res) => res.json())
-      .then((data) => setNickname(data?.user?.nickname ?? null))
+      .then((data) => {
+        setNickname(data?.user?.nickname ?? null)
+        if (data?.user?.mustChangePassword && !PASSWORD_CHANGE_EXEMPT_PATHS.has(pathname)) {
+          router.replace(FORCE_PASSWORD_CHANGE_PATH)
+        }
+      })
       .catch(() => setNickname(null))
-  }, [pathname])
+  }, [pathname, router])
 
   return (
     <header className="bg-white shadow-sm sticky top-0 z-50">

@@ -31,9 +31,10 @@ export default async function GroupPage() {
   }
 
   const db = getDb()
-  const [{ data: rooms }, { data: members }] = await Promise.all([
+  const [{ data: rooms }, { data: members }, { data: aiStudents }] = await Promise.all([
     db.from('study_rooms').select('*').order('created_at', { ascending: true }),
     db.from('room_members').select('room_id, user_id, status'),
+    db.from('ai_students').select('room_id').eq('is_active', true),
   ])
 
   const approvedCountByRoom = new Map<string, number>()
@@ -47,6 +48,11 @@ export default async function GroupPage() {
     }
   }
 
+  const aiStudentCountByRoom = new Map<string, number>()
+  for (const s of (aiStudents ?? []) as Pick<{ room_id: string }, 'room_id'>[]) {
+    aiStudentCountByRoom.set(s.room_id, (aiStudentCountByRoom.get(s.room_id) ?? 0) + 1)
+  }
+
   const roomList: GroupRoom[] = ((rooms ?? []) as DbStudyRoom[]).map((room) => ({
     id: room.id,
     name: room.name,
@@ -55,6 +61,7 @@ export default async function GroupPage() {
     interest: room.interest,
     maxMembers: room.max_members,
     approvedCount: approvedCountByRoom.get(room.id) ?? 0,
+    aiStudentCount: aiStudentCountByRoom.get(room.id) ?? 0,
     myStatus: myStatusByRoom.get(room.id) ?? null,
     isRecommended:
       user.onboarding_done && !!user.ai_level && !!user.ai_interest &&

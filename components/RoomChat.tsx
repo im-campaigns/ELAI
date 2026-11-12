@@ -22,7 +22,8 @@ type Props = {
 // Realtime이 "구독됨" 상태를 보고해도 실제로 이벤트가 안 오는 경우가 있어(원인 불명,
 // 콘솔 로그로 계속 관찰 중), realtime 상태를 믿고 polling을 완전히 끄지 않는다.
 // 평소엔 느슨하게, 내가 AI쌤을 트리거할 만한 메시지를 보낸 직후에는 빠르게 확인한다.
-const IDLE_POLL_INTERVAL_MS = 10000
+// 탭이 보이는 동안은 2.5초 간격으로, 탭이 안 보이면(document.hidden) fetch 자체를 건너뛴다.
+const IDLE_POLL_INTERVAL_MS = 2500
 const FAST_POLL_INTERVAL_MS = 3000
 const FAST_POLL_DURATION_MS = 60000
 const MAX_LENGTH = 500

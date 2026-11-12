@@ -11,6 +11,7 @@ import {
 
 export const AI_TEACHER_NICKNAME = 'AI쌤'
 export const AI_TEACHER_LIMIT_MESSAGE = '잠시 후 다시 질문해 주세요. 질문이 너무 잦으면 AI쌤이 잠깐 쉬어가요 🙏'
+export const AI_BUDGET_PAUSED_MESSAGE = 'AI쌤이 잠시 쉬고 있어요. 잠시 후 다시 질문해 주세요 🙏'
 
 // 회원 질문에 대한 AI쌤의 본 답변만 기존 모델을 유지하고, 그 외(환영 인사/AI 학생/보정/요약)는
 // 비용이 저렴한 모델을 쓴다.
@@ -32,13 +33,21 @@ const AI_TEACHER_PER_USER_DAILY_WINDOW_MS = 24 * 60 * 60 * 1000
 // AI 학생 비용 보호: 방마다 10분당 최대 5개 메시지만 생성한다.
 const AI_STUDENT_RATE_LIMIT_WINDOW_MS = 10 * 60 * 1000
 const AI_STUDENT_RATE_LIMIT_MAX = 5
-const AI_STUDENT_DEFAULT_REPLY_CHANCE = 0.25
-// 사람처럼 시간차를 두고 메시지가 보이도록 생성 시점 + 5~40초 뒤에 visible_at을 잡는다.
-const AI_STUDENT_DELAY_MIN_MS = 5 * 1000
-const AI_STUDENT_DELAY_MAX_MS = 40 * 1000
-const TEACHER_FOLLOW_UP_DELAY_MIN_MS = 5 * 1000
-const TEACHER_FOLLOW_UP_DELAY_MAX_MS = 15 * 1000
+// 회원 메시지 1개당 "AI 학생이 반응을 시도할지"를 결정하는 단일 확률(약 40%).
+// 페르소나별 replyChance는 더 이상 반응 여부 결정에 쓰지 않고, 누가 반응할지 고르는 데만 쓴다.
+const AI_STUDENT_REPLY_PROBABILITY = 0.4
+// 사람처럼 시간차를 두고 메시지가 보이도록 생성 시점 + 5~40초 뒤에 visible_at을 잡는다(AI쌤 응답이 없는 경우).
+const AI_STUDENT_STANDALONE_DELAY_MIN_MS = 5 * 1000
+const AI_STUDENT_STANDALONE_DELAY_MAX_MS = 40 * 1000
+// AI쌤이 먼저 답한 뒤 AI 학생이 자연스럽게 이어 반응하는 지연(4~10초).
+const AI_STUDENT_FOLLOW_UP_DELAY_MIN_MS = 4 * 1000
+const AI_STUDENT_FOLLOW_UP_DELAY_MAX_MS = 10 * 1000
+const TEACHER_CLARIFICATION_DELAY_MIN_MS = 5 * 1000
+const TEACHER_CLARIFICATION_DELAY_MAX_MS = 15 * 1000
 const CLARIFICATION_TAG_PATTERN = /\[\[NEEDS_CLARIFICATION:\s*(yes|no)\s*\]\]/i
+
+// 비용/무한반복 방지: 방별 하루 AI 메시지 상한.
+const AI_DAILY_ROOM_MESSAGE_LIMIT = 100
 
 type RoomContext = {
   id: string
@@ -57,10 +66,11 @@ const levelLabel: Record<AiLevel, string> = {
 // AI쌤과 AI 학생이 공통으로 지켜야 하는 안전 규칙. 두 역할의 시스템 프롬프트에 모두 포함한다.
 const SHARED_SAFETY_RULES = `- 회원에게 전화번호, 주소, 실명, 직장명, SNS 계정 등 개인정보를 절대 묻지 않습니다
 - 회원이 개인정보를 올리면 "개인정보는 여기서 안 올리시는 게 좋을 것 같아요" 정도로 자연스럽게 말립니다
-- 따로 연락하기, 오프라인 만남, 개인 메시지를 절대 제안하지 않습니다
+- 따로 연락하기, 오프라인 만남, 개인 메시지, 외부 링크 공유를 절대 제안하지 않습니다
 - 누군가 "AI예요?", "진짜 사람이에요?"라고 진지하게 물으면 부정하지 않고 "저는 학습 분위기를 돕는 AI 참여자예요"라고 짧고 사실대로 답합니다
 - 연애, 정치, 종교, 금전 이야기로 대화를 끌고 가지 않습니다
-- 다른 회원의 직업, 수준 등 개인 프로필 정보를 대화 중 절대 언급하지 않습니다`
+- 다른 회원의 직업, 수준 등 개인 프로필 정보를 대화 중 절대 언급하지 않습니다
+- 다른 참여자(AI쌤, 다른 회원, 다른 AI 참여자)를 대신해서 말하지 않고, 자기 자신에게 인사하거나 답하지 않습니다`
 
 // 방의 "관심 분야"가 악기 기타(guitar) 등으로 오해되지 않도록 뜻을 명확히 알려주는 설명.
 // 두 역할의 시스템 프롬프트에 모두 포함한다.
@@ -111,6 +121,7 @@ function studentPersonaPrompt(room: RoomContext, persona: AiStudentPersona): str
 - 실제 수강생처럼 짧고 자연스럽게 1~2문장으로 반응합니다. 선생님처럼 길게 가르치려 하지 않습니다
 - 당신의 말투와 성격을 꾸준히 유지합니다
 - AI쌤의 진행(인사, 질문, 정리)을 방해하거나 끊지 않습니다
+- 공감, 보충 설명, 가벼운 추가 질문 위주로 반응합니다
 - 가끔(자주는 아니고 드물게) 당신의 AI 이해 수준에 맞게 AI 개념을 살짝 오해한 듯한 말을 해도 괜찮습니다. 단, 아래 안전 규칙은 절대 어기지 않습니다
 - 당신 자신의 반응만 말합니다. 다른 참여자(AI쌤이나 다른 회원)를 대신해서 말하거나, 당신 자신에게 인사하거나 답하지 않습니다
 ${INTEREST_EXPLANATION}
@@ -158,6 +169,33 @@ function extractText(response: Anthropic.Message): string {
     .join('')
 }
 
+// ---- 서버 측 안전 검사 ----
+// 회원에게 전화번호/주소/SNS/외부 링크를 요구하거나 오프라인 만남·개인 연락을 유도하는 문장이
+// AI 생성 결과에 섞여 나오면(프롬프트 규칙을 지켰어도 모델이 실수할 수 있다), 통째로
+// 안전한 대체 문구로 바꿔서 저장한다. 시스템 프롬프트(SHARED_SAFETY_RULES)가 1차 방어선이고,
+// 이 필터가 2차 방어선이다.
+const UNSAFE_PATTERNS: RegExp[] = [
+  /01[016789][-.\s]?\d{3,4}[-.\s]?\d{4}/, // 휴대폰 번호
+  /\d{2,4}[-.\s]\d{3,4}[-.\s]\d{4}/, // 일반 전화번호 형태
+  /https?:\/\/\S+/i, // URL
+  /\bwww\.\S+/i,
+  /[a-zA-Z0-9][a-zA-Z0-9._%+-]*@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/, // 이메일
+  /카카오\s?(톡|아이디)|라인\s?아이디|인스타(그램)?\s?(아이디|계정)?|오픈\s?채팅/,
+  /따로\s?연락|개인\s?(메시지|연락|톡)|오프라인에서\s?(만나|보)/,
+]
+
+const UNSAFE_FALLBACK_REPLY = '죄송해요, 그 부분은 여기서 다루기 어려워요. 다른 질문을 편하게 올려주세요 🙏'
+
+function sanitizeAiOutput(text: string): string {
+  const trimmed = text.trim()
+  if (!trimmed) return trimmed
+  if (UNSAFE_PATTERNS.some((pattern) => pattern.test(trimmed))) {
+    console.error('[roomAi] 안전 규칙 위반 가능성이 있는 AI 출력을 차단했습니다.')
+    return UNSAFE_FALLBACK_REPLY
+  }
+  return trimmed
+}
+
 /** 토큰 사용량을 ai_usage_log에 적재한다. 실패해도 채팅 흐름을 막지 않는 fire-and-forget. */
 function logUsage(params: {
   roomId: string
@@ -184,9 +222,10 @@ async function insertAiMessage(
   roomId: string,
   content: string,
   options: { kind?: string; visibleAt?: string; triggeredBy?: string; userId?: string } = {},
-): Promise<{ error: { code?: string } | null }> {
+): Promise<{ error: { code?: string } | null; visibleAt: string | null }> {
   const trimmed = content.trim()
-  if (!trimmed) return { error: null }
+  if (!trimmed) return { error: null, visibleAt: null }
+  const visibleAt = options.visibleAt ?? new Date().toISOString()
   const { error } = await getDb().from('room_messages').insert({
     room_id: roomId,
     user_id: options.userId ?? null,
@@ -194,13 +233,13 @@ async function insertAiMessage(
     nickname: AI_TEACHER_NICKNAME,
     content: trimmed,
     ...(options.kind ? { kind: options.kind } : {}),
-    ...(options.visibleAt ? { visible_at: options.visibleAt } : {}),
+    visible_at: visibleAt,
     ...(options.triggeredBy ? { triggered_by: options.triggeredBy } : {}),
   })
   if (error && error.code !== UNIQUE_VIOLATION_CODE) {
     console.error('[roomAi] AI쌤 메시지 저장 실패:', error)
   }
-  return { error }
+  return { error, visibleAt: error ? null : visibleAt }
 }
 
 async function insertAiStudentMessage(params: {
@@ -209,11 +248,11 @@ async function insertAiStudentMessage(params: {
   nickname: string
   content: string
   triggeredBy: string
+  visibleAt: string
 }): Promise<{ error: { code?: string } | null; visibleAt: string | null }> {
   const trimmed = params.content.trim()
   if (!trimmed) return { error: null, visibleAt: null }
 
-  const visibleAt = new Date(Date.now() + randomInt(AI_STUDENT_DELAY_MIN_MS, AI_STUDENT_DELAY_MAX_MS)).toISOString()
   const { error } = await getDb().from('room_messages').insert({
     room_id: params.roomId,
     user_id: null,
@@ -221,13 +260,13 @@ async function insertAiStudentMessage(params: {
     sender_type: 'ai_student',
     nickname: params.nickname,
     content: trimmed,
-    visible_at: visibleAt,
+    visible_at: params.visibleAt,
     triggered_by: params.triggeredBy,
   })
   if (error && error.code !== UNIQUE_VIOLATION_CODE) {
     console.error('[roomAi] AI 학생 메시지 저장 실패:', error)
   }
-  return { error, visibleAt: error ? null : visibleAt }
+  return { error, visibleAt: error ? null : params.visibleAt }
 }
 
 /**
@@ -337,6 +376,75 @@ async function getConversationContext(roomId: string): Promise<{ summaryText: st
 }
 
 /**
+ * 방의 가장 최근 메시지 2개가 전부 AI(AI쌤/AI 학생)인지 확인한다. 무한 반복 방지의
+ * 2차 방어선: 구조적으로는 AI 메시지가 새 AI 생성을 트리거할 길이 없지만(AI는 항상
+ * 회원이 보낸 member 메시지의 triggered_by로만 생성된다), 혹시 모를 레이스 컨디션이나
+ * 향후 코드 변경에 대비해 생성 직전에 한 번 더 확인한다.
+ */
+async function lastTwoMessagesAreAi(roomId: string): Promise<boolean> {
+  const { data, error } = await getDb()
+    .from('room_messages')
+    .select('sender_type')
+    .eq('room_id', roomId)
+    .order('created_at', { ascending: false })
+    .limit(2)
+
+  if (error) {
+    console.error('[roomAi] 최근 메시지 발신자 확인 실패:', error)
+    return false
+  }
+  const rows = (data ?? []) as Pick<DbRoomMessage, 'sender_type'>[]
+  if (rows.length < 2) return false
+  return rows.every((r) => r.sender_type === 'ai_teacher' || r.sender_type === 'ai_student')
+}
+
+async function countAiMessagesToday(roomId: string): Promise<number> {
+  const startOfDay = new Date()
+  startOfDay.setUTCHours(0, 0, 0, 0)
+  const { count, error } = await getDb()
+    .from('room_messages')
+    .select('id', { count: 'exact', head: true })
+    .eq('room_id', roomId)
+    .in('sender_type', ['ai_teacher', 'ai_student'])
+    .gte('created_at', startOfDay.toISOString())
+
+  if (error) {
+    console.error('[roomAi] 방별 오늘 AI 메시지 수 조회 실패:', error)
+    return AI_DAILY_ROOM_MESSAGE_LIMIT // 조회 실패 시 안전하게 더 생성하지 않는다
+  }
+  return count ?? 0
+}
+
+async function getTodayTotalTokens(): Promise<number | null> {
+  const budget = Number(process.env.AI_DAILY_TOKEN_BUDGET)
+  if (!Number.isFinite(budget) || budget <= 0) return null // 예산 미설정이면 검사하지 않는다
+
+  const startOfDay = new Date()
+  startOfDay.setUTCHours(0, 0, 0, 0)
+  const { data, error } = await getDb()
+    .from('ai_usage_log')
+    .select('input_tokens, output_tokens')
+    .gte('created_at', startOfDay.toISOString())
+
+  if (error) {
+    console.error('[roomAi] 전체 토큰 사용량 조회 실패:', error)
+    return budget // 조회 실패 시 안전하게 예산 초과로 간주한다
+  }
+  const used = (data ?? []).reduce((sum, row) => sum + (row.input_tokens ?? 0) + (row.output_tokens ?? 0), 0)
+  return used
+}
+
+/** 방별 상한/전체 토큰 예산을 넘었는지 확인한다. 넘었으면 Claude를 호출하지 않는다. */
+async function isAiBudgetExceeded(roomId: string): Promise<boolean> {
+  const [roomCount, totalTokens] = await Promise.all([countAiMessagesToday(roomId), getTodayTotalTokens()])
+  if (roomCount >= AI_DAILY_ROOM_MESSAGE_LIMIT) return true
+
+  const budget = Number(process.env.AI_DAILY_TOKEN_BUDGET)
+  if (totalTokens !== null && Number.isFinite(budget) && budget > 0 && totalTokens >= budget) return true
+  return false
+}
+
+/**
  * 방에 입장할 때 한 번만 호출되는 전용 처리. AI쌤의 환영 인사 + 오늘의 질문을 올린다.
  * 환영 인사는 kind='welcome'으로 저장되고, room_messages에는 방당 kind='welcome' 행이
  * 하나만 존재하도록 DB 유니크 인덱스가 걸려 있다. 동시에 여러 요청이 들어와도
@@ -378,7 +486,7 @@ export async function maybeSendWelcome(room: RoomContext): Promise<void> {
       ],
     })
 
-    const text = extractText(response)
+    const text = sanitizeAiOutput(extractText(response))
     logUsage({ roomId: room.id, purpose: 'welcome', model: CHEAP_MODEL, usage: response.usage })
     await insertAiMessage(room.id, text, { kind: 'welcome' })
   } catch (err) {
@@ -411,34 +519,51 @@ async function countAiTeacherRepliesForUser(roomId: string, userId: string, wind
   return count ?? 0
 }
 
+type TeacherTrigger = { id: string; nickname: string; content: string; userId: string }
+type StudentTrigger = { id: string; nickname: string; content: string }
+
 /**
- * 회원이 올린 트리거 메시지에 AI쌤이 답한다.
- * 남용 방지: 회원 1명당 방 하나에서 분당/일별 호출 한도를 넘으면 Claude를 호출하지 않고
- * { limited: true }를 돌려준다 — 호출부(route.ts)가 이 플래그로 해당 사용자에게만 안내를
- * 보여주고, 방 전체 채팅에는 안내 메시지를 남기지 않는다(다른 회원에게 스팸처럼 보이지 않게).
- * "회원 메시지 1개당 AI쌤 응답 최대 1개"는 triggered_by 부분 유니크 인덱스로 DB가 보장한다
- * (예전의 "가장 최근 메시지가 AI쌤이면 건너뛴다" 휴리스틱은 지연 표시되는 AI 학생/보정
- * 메시지 때문에 오판하는 경우가 있어 제거했다).
+ * Claude를 호출하기 전에 빠르게(DB 조회만) 확인하는 사전 검사. 채팅 응답 속도를 위해
+ * route.ts가 이 함수는 await로 즉시 확인하고, 실제 생성(runTeacherReply)은 백그라운드로
+ * 넘긴다. 차단된 경우에만 회원에게 보여줄 안내 문구를 함께 돌려준다.
  */
-export async function maybeReplyToMember(
+export async function precheckTeacherReply(
   room: RoomContext,
-  trigger: { id: string; nickname: string; content: string; userId: string },
-): Promise<{ limited: boolean }> {
+  trigger: TeacherTrigger,
+): Promise<{ blocked: boolean; message?: string }> {
   const [minuteCount, dailyCount] = await Promise.all([
     countAiTeacherRepliesForUser(room.id, trigger.userId, AI_TEACHER_PER_USER_MINUTE_WINDOW_MS),
     countAiTeacherRepliesForUser(room.id, trigger.userId, AI_TEACHER_PER_USER_DAILY_WINDOW_MS),
   ])
   if (minuteCount >= AI_TEACHER_PER_USER_MINUTE_LIMIT || dailyCount >= AI_TEACHER_PER_USER_DAILY_LIMIT) {
-    return { limited: true }
+    return { blocked: true, message: AI_TEACHER_LIMIT_MESSAGE }
   }
 
+  if (await isAiBudgetExceeded(room.id)) {
+    return { blocked: true, message: AI_BUDGET_PAUSED_MESSAGE }
+  }
+
+  if (await lastTwoMessagesAreAi(room.id)) {
+    return { blocked: true }
+  }
+
+  return { blocked: false }
+}
+
+/**
+ * AI쌤의 본 답변을 생성하고 저장한다. 느린 Claude 호출이 포함되어 있으므로 route.ts에서
+ * waitUntil로 백그라운드 실행한다(precheckTeacherReply를 먼저 통과한 뒤에만 호출됨).
+ * 성공하면 이어서(백그라운드 안에서) AI 학생의 4~10초 지연 후속 반응을 시도한다.
+ */
+export async function runTeacherReply(room: RoomContext, trigger: TeacherTrigger): Promise<void> {
   if (!process.env.ANTHROPIC_API_KEY) {
     console.error('[roomAi] ANTHROPIC_API_KEY가 설정되어 있지 않습니다.')
     await insertAiMessage(room.id, FALLBACK_REPLY, { triggeredBy: trigger.id, userId: trigger.userId })
-    return { limited: false }
+    return
   }
 
   const { summaryText, recentTranscript } = await getConversationContext(room.id)
+  let teacherVisibleAt: string | null = null
 
   try {
     const client = anthropicClient()
@@ -458,14 +583,30 @@ export async function maybeReplyToMember(
       ],
     })
 
-    const text = extractText(response)
+    const text = sanitizeAiOutput(extractText(response))
     logUsage({ roomId: room.id, purpose: 'ai_teacher_reply', model: MAIN_MODEL, usage: response.usage })
-    await insertAiMessage(room.id, text || FALLBACK_REPLY, { triggeredBy: trigger.id, userId: trigger.userId })
+    const { visibleAt } = await insertAiMessage(room.id, text || FALLBACK_REPLY, {
+      triggeredBy: trigger.id,
+      userId: trigger.userId,
+    })
+    teacherVisibleAt = visibleAt
   } catch (err) {
     console.error('[roomAi] 답변 생성 실패:', err)
-    await insertAiMessage(room.id, FALLBACK_REPLY, { triggeredBy: trigger.id, userId: trigger.userId })
+    const { visibleAt } = await insertAiMessage(room.id, FALLBACK_REPLY, {
+      triggeredBy: trigger.id,
+      userId: trigger.userId,
+    })
+    teacherVisibleAt = visibleAt
   }
-  return { limited: false }
+
+  if (!teacherVisibleAt) return
+  // AI쌤이 답한 트리거에도 AI 학생이 ~40% 확률로 4~10초 뒤 자연스럽게 반응할 수 있다
+  // ("회원 메시지 1개당 AI 발언 최대 2개: AI쌤 1 + AI 학생 최대 1").
+  await maybeTriggerAiStudent(
+    room,
+    { id: trigger.id, nickname: trigger.nickname, content: trigger.content },
+    { baseAtIso: teacherVisibleAt, delayMinMs: AI_STUDENT_FOLLOW_UP_DELAY_MIN_MS, delayMaxMs: AI_STUDENT_FOLLOW_UP_DELAY_MAX_MS },
+  )
 }
 
 async function countRecentAiStudentMessages(roomId: string): Promise<number> {
@@ -493,6 +634,7 @@ async function maybeSendStudentClarification(
   info: { studentNickname: string; studentContent: string; visibleAt: string },
 ): Promise<void> {
   if (!process.env.ANTHROPIC_API_KEY) return
+  if (await isAiBudgetExceeded(room.id)) return
 
   try {
     const client = anthropicClient()
@@ -508,7 +650,7 @@ async function maybeSendStudentClarification(
       ],
     })
 
-    const text = extractText(response)
+    const text = sanitizeAiOutput(extractText(response))
     logUsage({ roomId: room.id, purpose: 'clarification', model: CHEAP_MODEL, usage: response.usage })
     if (text) {
       await insertAiMessage(room.id, text, { visibleAt: info.visibleAt })
@@ -519,18 +661,22 @@ async function maybeSendStudentClarification(
 }
 
 /**
- * 회원이 메시지를 올리면, 방에 등록된 활성 AI 학생 중 "반응하기로" 확률이 맞은 사람 한 명만
- * 골라 자연스럽게 반응한다. AI쌤이 답할 질문(shouldAiReply)에는 끼지 않아 AI쌤의 진행을
- * 방해하지 않고, 회원 메시지 1개당 AI 학생 응답은 최대 1개로 제한한다. 비용 보호를 위해
- * 방마다 10분당 AI 학생 메시지 최대 5개로 막고, 같은 트리거 메시지에 대한 중복 응답은
- * room_messages.triggered_by의 부분 유니크 인덱스로 DB 차원에서도 막는다.
- * 간단한 작업이라 저렴한 모델을 쓴다.
+ * 회원이 메시지를 올리면, ~40% 확률로 방에 등록된 활성 AI 학생 중 한 명이 자연스럽게 반응한다.
+ * (role) options가 없으면(AI쌤이 답하지 않는 메시지) "지금부터" 5~40초 뒤에, options로
+ * baseAtIso가 주어지면(AI쌤 응답 뒤) 그 시각 기준 4~10초 뒤에 표시된다.
+ * 회원 메시지 1개당 AI 학생 응답은 최대 1개로 제한되고, 같은 트리거 메시지에 대한 중복
+ * 응답은 room_messages.triggered_by의 부분 유니크 인덱스로 DB 차원에서도 막힌다.
+ * 비용 보호를 위해 방마다 10분당 AI 학생 메시지 최대 5개로 막는다. 간단한 작업이라
+ * 저렴한 모델을 쓴다.
  */
 export async function maybeTriggerAiStudent(
   room: RoomContext,
-  trigger: { id: string; nickname: string; content: string },
+  trigger: StudentTrigger,
+  options?: { baseAtIso: string; delayMinMs: number; delayMaxMs: number },
 ): Promise<void> {
-  if (shouldAiReply(trigger.content)) return
+  if (Math.random() >= AI_STUDENT_REPLY_PROBABILITY) return
+  if (await isAiBudgetExceeded(room.id)) return
+  if (await lastTwoMessagesAreAi(room.id)) return
 
   const db = getDb()
   const { data: students, error } = await db
@@ -545,13 +691,8 @@ export async function maybeTriggerAiStudent(
   }
   if (!students || students.length === 0) return
 
-  const candidates = (students as Pick<DbAiStudent, 'id' | 'nickname' | 'persona'>[]).filter((s) => {
-    const persona = s.persona as AiStudentPersona
-    return Math.random() < (persona.replyChance ?? AI_STUDENT_DEFAULT_REPLY_CHANCE)
-  })
-  if (candidates.length === 0) return
-
-  const chosen = candidates[Math.floor(Math.random() * candidates.length)]
+  const pool = students as Pick<DbAiStudent, 'id' | 'nickname' | 'persona'>[]
+  const chosen = pool[Math.floor(Math.random() * pool.length)]
   const persona = chosen.persona as AiStudentPersona
 
   if ((await countRecentAiStudentMessages(room.id)) >= AI_STUDENT_RATE_LIMIT_MAX) return
@@ -559,11 +700,16 @@ export async function maybeTriggerAiStudent(
 
   const { summaryText, recentTranscript } = await getConversationContext(room.id)
 
+  const baseAtMs = options ? new Date(options.baseAtIso).getTime() : Date.now()
+  const delayMinMs = options?.delayMinMs ?? AI_STUDENT_STANDALONE_DELAY_MIN_MS
+  const delayMaxMs = options?.delayMaxMs ?? AI_STUDENT_STANDALONE_DELAY_MAX_MS
+  const visibleAt = new Date(Math.max(baseAtMs, Date.now()) + randomInt(delayMinMs, delayMaxMs)).toISOString()
+
   try {
     const client = anthropicClient()
     const response = await client.messages.create({
       model: CHEAP_MODEL,
-      max_tokens: 200,
+      max_tokens: 150,
       system: cachedSystem(studentPersonaPrompt(room, persona)),
       messages: [
         {
@@ -578,25 +724,28 @@ export async function maybeTriggerAiStudent(
     })
 
     const { content: cleaned, needsClarification } = parseClarificationTag(extractText(response))
+    const sanitized = sanitizeAiOutput(cleaned)
     logUsage({ roomId: room.id, purpose: 'ai_student_reply', model: CHEAP_MODEL, usage: response.usage })
-    if (!cleaned) return
+    if (!sanitized) return
 
-    const { error: insertError, visibleAt } = await insertAiStudentMessage({
+    const { error: insertError, visibleAt: insertedVisibleAt } = await insertAiStudentMessage({
       roomId: room.id,
       studentId: chosen.id,
       nickname: chosen.nickname,
-      content: cleaned,
+      content: sanitized,
       triggeredBy: trigger.id,
+      visibleAt,
     })
-    if (insertError || !visibleAt) return
+    if (insertError || !insertedVisibleAt) return
 
-    if (needsClarification) {
+    if (needsClarification && sanitized === cleaned) {
       const followUpVisibleAt = new Date(
-        new Date(visibleAt).getTime() + randomInt(TEACHER_FOLLOW_UP_DELAY_MIN_MS, TEACHER_FOLLOW_UP_DELAY_MAX_MS),
+        new Date(insertedVisibleAt).getTime() +
+          randomInt(TEACHER_CLARIFICATION_DELAY_MIN_MS, TEACHER_CLARIFICATION_DELAY_MAX_MS),
       ).toISOString()
       await maybeSendStudentClarification(room, {
         studentNickname: chosen.nickname,
-        studentContent: cleaned,
+        studentContent: sanitized,
         visibleAt: followUpVisibleAt,
       })
     }

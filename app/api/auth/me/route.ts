@@ -15,6 +15,7 @@ export async function GET() {
       aiInterest: user.ai_interest,
       aiLevel: user.ai_level,
       onboardingDone: user.onboarding_done,
+      mustChangePassword: user.must_change_password,
     },
   })
 }
