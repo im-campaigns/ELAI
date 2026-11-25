@@ -30,6 +30,13 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: '닉네임 또는 비밀번호가 올바르지 않아요.' }, { status: 401 })
     }
 
+    // 최근 접속 시각 기록(관리자 대시보드용). 컬럼이 아직 없거나 실패해도 로그인은 막지 않는다.
+    const { error: loginTimeError } = await db
+      .from('users')
+      .update({ last_login_at: new Date().toISOString() })
+      .eq('id', user.id)
+    if (loginTimeError) console.error('[login] 최근 접속 시각 기록 실패:', loginTimeError.message)
+
     createUserSession(user.id)
     return NextResponse.json({
       ok: true,

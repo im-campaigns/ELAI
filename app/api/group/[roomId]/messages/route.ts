@@ -3,6 +3,7 @@ import { waitUntil } from '@vercel/functions'
 import { getCurrentUser } from '@/lib/auth'
 import { getDb, type DbRoomMessage, type DbStudyRoom } from '@/lib/db'
 import { ConfigError } from '@/lib/errors'
+import { loadApprovedMembership } from '@/lib/roomAccess'
 import { maybeTriggerAiStudent, precheckTeacherReply, runTeacherReply, shouldAiReply } from '@/lib/roomAi'
 
 const MAX_CONTENT_LENGTH = 500
@@ -27,41 +28,6 @@ function formatMessage(m: DbRoomMessage) {
     visibleAt: m.visible_at,
     triggeredBy: m.triggered_by,
   }
-}
-
-export async function loadApprovedMembership(roomId: string, userId: string) {
-  const db = getDb()
-
-  const { data: room, error: roomError } = await db
-    .from('study_rooms')
-    .select('*')
-    .eq('id', roomId)
-    .maybeSingle()
-
-  if (roomError) {
-    console.error('[group/messages] 방 조회 실패:', roomError)
-    return { error: NextResponse.json({ error: '방 정보를 불러오지 못했어요.' }, { status: 500 }) }
-  }
-  if (!room) {
-    return { error: NextResponse.json({ error: '존재하지 않는 방이에요.' }, { status: 404 }) }
-  }
-
-  const { data: membership, error: membershipError } = await db
-    .from('room_members')
-    .select('status')
-    .eq('room_id', roomId)
-    .eq('user_id', userId)
-    .maybeSingle()
-
-  if (membershipError) {
-    console.error('[group/messages] 멤버십 조회 실패:', membershipError)
-    return { error: NextResponse.json({ error: '참여 정보를 확인하지 못했어요.' }, { status: 500 }) }
-  }
-  if (membership?.status !== 'approved') {
-    return { error: NextResponse.json({ error: '승인된 회원만 이용할 수 있어요.' }, { status: 403 }) }
-  }
-
-  return { room: room as DbStudyRoom }
 }
 
 export async function GET(req: NextRequest, { params }: { params: { roomId: string } }) {

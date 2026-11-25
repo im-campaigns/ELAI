@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { getCurrentUser } from '@/lib/auth'
 import { ConfigError } from '@/lib/errors'
 import { maybeSendWelcome } from '@/lib/roomAi'
-import { loadApprovedMembership } from '@/app/api/group/[roomId]/messages/route'
+import { loadApprovedMembership } from '@/lib/roomAccess'
 
 /**
  * 방 입장 시 한 번만 호출되는 전용 엔드포인트. AI쌤의 환영 인사를 생성한다.

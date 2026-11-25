@@ -15,8 +15,8 @@ export const AI_BUDGET_PAUSED_MESSAGE = 'AI쌤이 잠시 쉬고 있어요. 잠�
 
 // 회원 질문에 대한 AI쌤의 본 답변만 기존 모델을 유지하고, 그 외(환영 인사/AI 학생/보정/요약)는
 // 비용이 저렴한 모델을 쓴다.
-const MAIN_MODEL = 'claude-opus-4-8'
-const CHEAP_MODEL = 'claude-haiku-4-5-20251001'
+export const MAIN_MODEL = 'claude-opus-4-8'
+export const CHEAP_MODEL = 'claude-haiku-4-5-20251001'
 
 const FALLBACK_REPLY = '지금은 답하기 어려워요. 잠시 후 다시 물어봐 주세요.'
 // Claude에 보내는 "최근 대화" 원문은 최근 10개까지만. 그보다 오래된 내용은 요약으로 대체한다.
@@ -47,7 +47,7 @@ const TEACHER_CLARIFICATION_DELAY_MAX_MS = 15 * 1000
 const CLARIFICATION_TAG_PATTERN = /\[\[NEEDS_CLARIFICATION:\s*(yes|no)\s*\]\]/i
 
 // 비용/무한반복 방지: 방별 하루 AI 메시지 상한.
-const AI_DAILY_ROOM_MESSAGE_LIMIT = 100
+export const AI_DAILY_ROOM_MESSAGE_LIMIT = 100
 
 type RoomContext = {
   id: string
@@ -174,23 +174,41 @@ function extractText(response: Anthropic.Message): string {
 // AI 생성 결과에 섞여 나오면(프롬프트 규칙을 지켰어도 모델이 실수할 수 있다), 통째로
 // 안전한 대체 문구로 바꿔서 저장한다. 시스템 프롬프트(SHARED_SAFETY_RULES)가 1차 방어선이고,
 // 이 필터가 2차 방어선이다.
-const UNSAFE_PATTERNS: RegExp[] = [
-  /01[016789][-.\s]?\d{3,4}[-.\s]?\d{4}/, // 휴대폰 번호
-  /\d{2,4}[-.\s]\d{3,4}[-.\s]\d{4}/, // 일반 전화번호 형태
-  /https?:\/\/\S+/i, // URL
-  /\bwww\.\S+/i,
-  /[a-zA-Z0-9][a-zA-Z0-9._%+-]*@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/, // 이메일
-  /카카오\s?(톡|아이디)|라인\s?아이디|인스타(그램)?\s?(아이디|계정)?|오픈\s?채팅/,
-  /따로\s?연락|개인\s?(메시지|연락|톡)|오프라인에서\s?(만나|보)/,
+const UNSAFE_PATTERNS: Array<{ label: string; pattern: RegExp }> = [
+  { label: '전화번호', pattern: /01[016789][-.\s]?\d{3,4}[-.\s]?\d{4}/ }, // 휴대폰 번호
+  { label: '전화번호', pattern: /\d{2,4}[-.\s]\d{3,4}[-.\s]\d{4}/ }, // 일반 전화번호 형태
+  { label: '외부 링크', pattern: /https?:\/\/\S+/i }, // URL
+  { label: '외부 링크', pattern: /\bwww\.\S+/i },
+  { label: '이메일', pattern: /[a-zA-Z0-9][a-zA-Z0-9._%+-]*@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/ }, // 이메일
+  { label: 'SNS/메신저 유도', pattern: /카카오\s?(톡|아이디)|라인\s?아이디|인스타(그램)?\s?(아이디|계정)?|오픈\s?채팅/ },
+  { label: '개인 연락/만남 유도', pattern: /따로\s?연락|개인\s?(메시지|연락|톡)|오프라인에서\s?(만나|보)/ },
 ]
 
 const UNSAFE_FALLBACK_REPLY = '죄송해요, 그 부분은 여기서 다루기 어려워요. 다른 질문을 편하게 올려주세요 🙏'
 
-function sanitizeAiOutput(text: string): string {
+/**
+ * 안전 필터가 AI 출력을 차단한 사실을 ai_safety_log에 기록한다(관리자 대시보드 3-4 D).
+ * 차단된 문장 원문은 저장하지 않고, 어떤 종류(label)였는지만 남긴다.
+ * 테이블이 아직 없거나 기록에 실패해도 채팅 흐름은 막지 않는 fire-and-forget.
+ */
+function logSafetyBlock(ctx: SafetyContext, reason: string): void {
+  getDb()
+    .from('ai_safety_log')
+    .insert({ room_id: ctx.roomId, purpose: ctx.purpose, reason })
+    .then(({ error }: { error: { message: string } | null }) => {
+      if (error) console.error('[roomAi] 안전 차단 기록 실패:', error)
+    })
+}
+
+type SafetyContext = { roomId: string; purpose: AiUsagePurpose }
+
+function sanitizeAiOutput(text: string, ctx: SafetyContext): string {
   const trimmed = text.trim()
   if (!trimmed) return trimmed
-  if (UNSAFE_PATTERNS.some((pattern) => pattern.test(trimmed))) {
+  const hit = UNSAFE_PATTERNS.find(({ pattern }) => pattern.test(trimmed))
+  if (hit) {
     console.error('[roomAi] 안전 규칙 위반 가능성이 있는 AI 출력을 차단했습니다.')
+    logSafetyBlock(ctx, hit.label)
     return UNSAFE_FALLBACK_REPLY
   }
   return trimmed
@@ -486,7 +504,7 @@ export async function maybeSendWelcome(room: RoomContext): Promise<void> {
       ],
     })
 
-    const text = sanitizeAiOutput(extractText(response))
+    const text = sanitizeAiOutput(extractText(response), { roomId: room.id, purpose: 'welcome' })
     logUsage({ roomId: room.id, purpose: 'welcome', model: CHEAP_MODEL, usage: response.usage })
     await insertAiMessage(room.id, text, { kind: 'welcome' })
   } catch (err) {
@@ -583,7 +601,7 @@ export async function runTeacherReply(room: RoomContext, trigger: TeacherTrigger
       ],
     })
 
-    const text = sanitizeAiOutput(extractText(response))
+    const text = sanitizeAiOutput(extractText(response), { roomId: room.id, purpose: 'ai_teacher_reply' })
     logUsage({ roomId: room.id, purpose: 'ai_teacher_reply', model: MAIN_MODEL, usage: response.usage })
     const { visibleAt } = await insertAiMessage(room.id, text || FALLBACK_REPLY, {
       triggeredBy: trigger.id,
@@ -650,7 +668,7 @@ async function maybeSendStudentClarification(
       ],
     })
 
-    const text = sanitizeAiOutput(extractText(response))
+    const text = sanitizeAiOutput(extractText(response), { roomId: room.id, purpose: 'clarification' })
     logUsage({ roomId: room.id, purpose: 'clarification', model: CHEAP_MODEL, usage: response.usage })
     if (text) {
       await insertAiMessage(room.id, text, { visibleAt: info.visibleAt })
@@ -724,7 +742,7 @@ export async function maybeTriggerAiStudent(
     })
 
     const { content: cleaned, needsClarification } = parseClarificationTag(extractText(response))
-    const sanitized = sanitizeAiOutput(cleaned)
+    const sanitized = sanitizeAiOutput(cleaned, { roomId: room.id, purpose: 'ai_student_reply' })
     logUsage({ roomId: room.id, purpose: 'ai_student_reply', model: CHEAP_MODEL, usage: response.usage })
     if (!sanitized) return
 

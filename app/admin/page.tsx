@@ -5,6 +5,8 @@ import { getOrderedSubtopicIds } from '@/lib/curriculum'
 import AdminLoginForm from '@/components/AdminLoginForm'
 import AdminUserTable from '@/components/AdminUserTable'
 import AdminRoomPanel, { type AdminPendingApplication, type AdminRoomOverview } from '@/components/AdminRoomPanel'
+import AdminDashboard from '@/components/AdminDashboard'
+import { loadAdminStats } from '@/lib/adminStats'
 import LogoutButton from '@/components/LogoutButton'
 
 export const metadata = {
@@ -136,6 +138,7 @@ export default async function AdminPage() {
 
   const users = await loadUsers()
   const { rooms, pending, budget } = await loadRoomsAdmin()
+  const stats = await loadAdminStats()
 
   return (
     <div className="min-h-screen bg-slate-50 py-12 px-4">
@@ -153,7 +156,11 @@ export default async function AdminPage() {
           />
         </div>
 
-        <AdminUserTable users={users} />
+        <AdminDashboard stats={stats} />
+
+        <div className="mt-12">
+          <AdminUserTable users={users} />
+        </div>
 
         <div className="mt-12">
           <h1 className="text-2xl font-bold text-slate-800 mb-6">그룹과외</h1>

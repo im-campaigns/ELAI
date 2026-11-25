@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import jwt from 'jsonwebtoken'
 import { getCurrentUser } from '@/lib/auth'
 import { ConfigError } from '@/lib/errors'
-import { loadApprovedMembership } from '../messages/route'
+import { loadApprovedMembership } from '@/lib/roomAccess'
 
 // Supabase Realtime 접근을 위한 단기 토큰. 이 앱은 Supabase Auth를 쓰지 않으므로,
 // 서버가 "승인된 멤버십"을 직접 확인한 뒤 해당 room_id만 읽을 수 있는 토큰을 발급한다.
